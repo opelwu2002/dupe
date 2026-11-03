@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { decodeDescriptionAndMeta, calculateTaxBreakdown } from '@/lib/productMeta';
+import {
+  decodeDescriptionAndMeta,
+  calculateTaxBreakdown,
+  FULFILLMENT_TYPE_OPTIONS,
+} from '@/lib/productMeta';
 
 export const revalidate = 0;
 
@@ -47,7 +51,7 @@ export default async function HomePage() {
         <div>
           <h1 className="text-xl font-bold tracking-tight text-[#222222] mb-1">精選刊登品項</h1>
           <p className="text-xs text-[#666666]">
-            回歸物之本質・透明標示含稅／未稅價與二聯／三聯發票資訊・直接與賣家對接
+            回歸物之本質・透明標示現貨／預購代購等待期、沒買到取消保障與含未稅發票資訊
           </p>
         </div>
         <Link
@@ -76,6 +80,11 @@ export default async function HomePage() {
           {products.map((item) => {
             const { meta } = decodeDescriptionAndMeta(item.description, item.product_variants);
             const taxInfo = calculateTaxBreakdown(item.price, meta.taxMode);
+            const fulfillObj = FULFILLMENT_TYPE_OPTIONS.find(
+              (f) => f.value === meta.fulfillmentType
+            );
+            const isPreorderOrProxy = meta.fulfillmentType !== 'in_stock';
+
             return (
               <Link
                 className="group block bg-white border border-[#E6E3DC] rounded-sm overflow-hidden hover:border-[#666666] transition-colors"
@@ -93,17 +102,21 @@ export default async function HomePage() {
                     <span className="text-xs text-[#666666]">無商品圖片</span>
                   )}
                   <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-bold ${
+                        isPreorderOrProxy
+                          ? 'bg-[#7F0019] text-white'
+                          : 'bg-[#222222] text-white'
+                      }`}
+                    >
+                      {fulfillObj?.badge || '現貨'}
+                    </span>
                     <span className="px-2 py-0.5 text-[10px] bg-white/90 border border-[#E6E3DC] text-[#222222] font-medium">
                       {meta.condition.split(' ')[0]}
                     </span>
                     {meta.invoiceCapability === 'invoice' && (
-                      <span className="px-2 py-0.5 text-[10px] bg-[#7F0019] text-white font-medium">
-                        可開發票(二聯/三聯)
-                      </span>
-                    )}
-                    {meta.invoiceCapability === 'receipt' && (
-                      <span className="px-2 py-0.5 text-[10px] bg-[#222222] text-white font-medium">
-                        可開收據
+                      <span className="px-2 py-0.5 text-[10px] bg-white/95 border border-[#7F0019] text-[#7F0019] font-bold">
+                        可開發票
                       </span>
                     )}
                   </div>
@@ -111,7 +124,11 @@ export default async function HomePage() {
                 <div className="p-4 space-y-2">
                   <div className="text-[11px] text-[#666666] flex justify-between items-center">
                     <span>{item.stores?.name || '實名賣家'}</span>
-                    <span>{item.stores?.meetup_location || '可洽詢交付'}</span>
+                    <span>
+                      {isPreorderOrProxy && meta.estimatedArrival
+                        ? `預計到貨：${meta.estimatedArrival}`
+                        : item.stores?.meetup_location || '可洽詢交付'}
+                    </span>
                   </div>
                   <h2 className="text-sm font-medium text-[#222222] line-clamp-2 leading-snug">
                     {item.title}

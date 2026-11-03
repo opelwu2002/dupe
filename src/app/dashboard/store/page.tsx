@@ -9,10 +9,18 @@ import {
   decodeDescriptionAndMeta,
   encodeDescriptionWithMeta,
   calculateTaxBreakdown,
+  calculateDepositBreakdown,
   TaxMode,
   InvoiceCapability,
+  FulfillmentType,
+  PaymentTermType,
   PRODUCT_CATEGORIES,
   PRODUCT_CONDITIONS,
+  FULFILLMENT_TYPE_OPTIONS,
+  PAYMENT_TERM_OPTIONS,
+  SHORTAGE_POLICY_OPTIONS,
+  BUYER_CANCEL_RULE_OPTIONS,
+  PURCHASE_LIMIT_OPTIONS,
   INVOICE_CAPABILITY_OPTIONS,
   INVOICE_TYPE_OPTIONS,
   NEGOTIABLE_OPTIONS,
@@ -79,12 +87,22 @@ export default function SellerCenterPage() {
     '面交當面點交',
   ]);
 
-  // 編輯視窗之稅務與發票狀態
+  // 編輯視窗：預購 / 代購 / 沒買到取消與退費狀態
+  const [editFulfillmentType, setEditFulfillmentType] = useState<FulfillmentType>('in_stock');
+  const [editOrderCutoffDate, setEditOrderCutoffDate] = useState('');
+  const [editEstimatedArrival, setEditEstimatedArrival] = useState('');
+  const [editPaymentTerm, setEditPaymentTerm] = useState<PaymentTermType>('full_upfront');
+  const [editDepositPercent, setEditDepositPercent] = useState<number>(30);
+  const [editShortagePolicy, setEditShortagePolicy] = useState(SHORTAGE_POLICY_OPTIONS[0]);
+  const [editBuyerCancelRule, setEditBuyerCancelRule] = useState(BUYER_CANCEL_RULE_OPTIONS[0]);
+  const [editPurchaseLimit, setEditPurchaseLimit] = useState(PURCHASE_LIMIT_OPTIONS[0]);
+
+  // 編輯視窗：稅務與發票狀態
   const [editTaxMode, setEditTaxMode] = useState<TaxMode>('tax_included');
   const [editInvoiceCapability, setEditInvoiceCapability] = useState<InvoiceCapability>('none');
   const [editInvoiceTypes, setEditInvoiceTypes] = useState<string[]>([
-    '二聯式發票（對個人／自然人買家）',
-    '三聯式發票（對公司行號／附統一編號與抬頭）',
+    INVOICE_TYPE_OPTIONS[0],
+    INVOICE_TYPE_OPTIONS[1],
   ]);
   const [editNegotiable, setEditNegotiable] = useState(NEGOTIABLE_OPTIONS[0]);
   const [editShippingFeeRule, setEditShippingFeeRule] = useState(SHIPPING_FEE_OPTIONS[0]);
@@ -164,6 +182,16 @@ export default function SellerCenterPage() {
     setEditHasMultiSpec(meta.hasMultiSpec);
     setEditSingleStock(meta.stock);
     setEditDeliveryMethods(meta.deliveryMethods);
+
+    setEditFulfillmentType(meta.fulfillmentType);
+    setEditOrderCutoffDate(meta.orderCutoffDate);
+    setEditEstimatedArrival(meta.estimatedArrival);
+    setEditPaymentTerm(meta.paymentTerm);
+    setEditDepositPercent(meta.depositPercent);
+    setEditShortagePolicy(meta.shortagePolicy);
+    setEditBuyerCancelRule(meta.buyerCancelRule);
+    setEditPurchaseLimit(meta.purchaseLimit);
+
     setEditTaxMode(meta.taxMode);
     setEditInvoiceCapability(meta.invoiceCapability);
     setEditInvoiceTypes(meta.invoiceTypes);
@@ -305,6 +333,14 @@ export default function SellerCenterPage() {
       taxMode: editTaxMode,
       invoiceCapability: editInvoiceCapability,
       invoiceTypes: editInvoiceCapability === 'invoice' ? editInvoiceTypes : [],
+      fulfillmentType: editFulfillmentType,
+      orderCutoffDate: editOrderCutoffDate.trim(),
+      estimatedArrival: editEstimatedArrival.trim(),
+      paymentTerm: editPaymentTerm,
+      depositPercent: Number(editDepositPercent) || 30,
+      shortagePolicy: editShortagePolicy,
+      buyerCancelRule: editBuyerCancelRule,
+      purchaseLimit: editPurchaseLimit,
       negotiable: editNegotiable,
       shippingFeeRule: editShippingFeeRule,
       leadTime: editLeadTime,
@@ -332,7 +368,7 @@ export default function SellerCenterPage() {
     });
     setEditingProduct(null);
     setSaving(false);
-    setMessage('商品規格、含稅/未稅價位與發票設定已同步更新至前台！');
+    setMessage('商品規格、預購/代購沒買到取消條款、含稅/未稅價位與發票設定已同步更新至前台！');
     loadSellerData();
   };
 
@@ -432,7 +468,7 @@ export default function SellerCenterPage() {
                 <thead>
                   <tr className="border-b border-[#E6E3DC] text-[#666666] bg-[#FAF9F5]">
                     <th className="p-3">商品資訊</th>
-                    <th className="p-3">分類 / 發票設定</th>
+                    <th className="p-3">供貨型態 / 發票</th>
                     <th className="p-3">含稅價 / 未稅價</th>
                     <th className="p-3">款式規格與庫存</th>
                     <th className="p-3">狀態</th>
@@ -446,6 +482,9 @@ export default function SellerCenterPage() {
                       p.product_variants
                     );
                     const taxInfo = calculateTaxBreakdown(p.price, meta.taxMode);
+                    const fulfillObj = FULFILLMENT_TYPE_OPTIONS.find(
+                      (f) => f.value === meta.fulfillmentType
+                    );
                     return (
                       <tr key={p.id} className="hover:bg-[#FAF9F5]/60">
                         <td className="p-3 flex items-center space-x-3">
@@ -477,14 +516,27 @@ export default function SellerCenterPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="p-3">
-                          <div className="font-medium text-[#222222]">{meta.category}</div>
+                        <td className="p-3 space-y-1">
+                          <span
+                            className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded-sm ${
+                              meta.fulfillmentType === 'in_stock'
+                                ? 'bg-[#FAF9F5] border border-[#E6E3DC] text-[#222222]'
+                                : 'bg-[#7F0019] text-white'
+                            }`}
+                          >
+                            {fulfillObj?.badge || '現貨'}
+                          </span>
+                          {meta.estimatedArrival && (
+                            <div className="text-[10px] text-[#666666]">
+                              到貨：{meta.estimatedArrival}
+                            </div>
+                          )}
                           <div className="text-[10px] text-[#7F0019]">
                             {meta.invoiceCapability === 'invoice'
-                              ? `可開發票 (${meta.invoiceTypes.map((t) => t.slice(0, 3)).join('/')})`
+                              ? '可開統一發票(二/三聯)'
                               : meta.invoiceCapability === 'receipt'
                               ? '可開免用發票收據'
-                              : '個人二手無發票'}
+                              : '無發票'}
                           </div>
                         </td>
                         <td className="p-3">
@@ -504,7 +556,7 @@ export default function SellerCenterPage() {
                             ))
                           ) : (
                             <span className="text-[11px] text-[#222222]">
-                              單一商品（庫存 {meta.stock} 件）
+                              單一商品（數量 {meta.stock} 件）
                             </span>
                           )}
                         </td>
@@ -513,17 +565,19 @@ export default function SellerCenterPage() {
                             className={`px-2 py-0.5 text-[11px] rounded-sm ${
                               p.status === 'published'
                                 ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : p.status === 'sold_out'
+                                ? 'bg-amber-50 text-amber-800 border border-amber-300'
                                 : 'bg-gray-100 text-gray-600 border border-gray-300'
                             }`}
                           >
                             {p.status === 'published'
-                              ? '上架中'
+                              ? '上架接單中'
                               : p.status === 'sold_out'
-                              ? '已售完'
+                              ? '完售 / 缺貨流單'
                               : '已下架'}
                           </span>
                         </td>
-                        <td className="p-3 text-right space-x-2">
+                        <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
                           <button
                             type="button"
                             onClick={() => openEditModal(p)}
@@ -532,13 +586,23 @@ export default function SellerCenterPage() {
                             編輯
                           </button>
                           {p.status === 'published' ? (
-                            <button
-                              type="button"
-                              onClick={() => handleProductStatusToggle(p, 'archived')}
-                              className="px-2 py-1 border border-[#E6E3DC] bg-white text-[#666666] hover:text-[#222222]"
-                            >
-                              下架
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleProductStatusToggle(p, 'sold_out')}
+                                className="px-2 py-1 border border-[#E6E3DC] bg-white text-amber-800 hover:bg-amber-50"
+                                title="標記為完售或代購未買到缺貨"
+                              >
+                                標記缺貨/完售
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleProductStatusToggle(p, 'archived')}
+                                className="px-2 py-1 border border-[#E6E3DC] bg-white text-[#666666] hover:text-[#222222]"
+                              >
+                                下架
+                              </button>
+                            </>
                           ) : (
                             <button
                               type="button"
@@ -714,7 +778,7 @@ export default function SellerCenterPage() {
         </div>
       )}
 
-      {/* 完整升級版：編輯商品彈窗（含明確欄位標頭、含稅/未稅換算、二聯/三聯發票設定） */}
+      {/* 完整升級版：編輯商品彈窗（含預購/代購沒買到取消退費機制、多規格明確標頭、含未稅對照、發票設定） */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white border border-[#E6E3DC] w-full max-w-3xl rounded-sm p-6 max-h-[92vh] overflow-y-auto">
@@ -795,6 +859,159 @@ export default function SellerCenterPage() {
                 </div>
               </div>
 
+              {/* 供貨型態（現貨 / 預購 / 連線代購 / 團購）與沒買到取消保障 */}
+              <div className="border-t border-[#E6E3DC] pt-4 space-y-3">
+                <label className="block font-bold text-[#222222]">
+                  供貨型態（現貨／預購／海外代購）與「沒買到／缺貨砍單」取消退費機制
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {FULFILLMENT_TYPE_OPTIONS.map((opt) => {
+                    const active = editFulfillmentType === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setEditFulfillmentType(opt.value)}
+                        className={`p-2 text-center border rounded-sm font-medium ${
+                          active
+                            ? 'border-[#7F0019] bg-[#7F0019] text-white'
+                            : 'border-[#E6E3DC] bg-white text-[#222222]'
+                        }`}
+                      >
+                        {opt.badge}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {editFulfillmentType !== 'in_stock' && (
+                  <div className="p-4 bg-[#FAF9F5] border-2 border-[#7F0019]/40 rounded-sm space-y-3">
+                    <div className="font-bold text-[#7F0019]">
+                      ⏳ 預購／代購等待期、訂金與「沒買到／缺貨」取消退費設定
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-medium text-[#222222] mb-1">
+                          收單／採購截止日
+                        </label>
+                        <input
+                          type="text"
+                          value={editOrderCutoffDate}
+                          onChange={(e) => setEditOrderCutoffDate(e.target.value)}
+                          placeholder="例：11/30 或 額滿為止"
+                          className="w-full px-2.5 py-1.5 border border-[#E6E3DC] bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium text-[#222222] mb-1">
+                          預計到貨／發售期間 *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={editEstimatedArrival}
+                          onChange={(e) => setEditEstimatedArrival(e.target.value)}
+                          placeholder="例：預計 12 月下旬抵台"
+                          className="w-full px-2.5 py-1.5 border border-[#E6E3DC] bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-medium text-[#222222] mb-1">
+                          單人限購／配額限制
+                        </label>
+                        <select
+                          value={editPurchaseLimit}
+                          onChange={(e) => setEditPurchaseLimit(e.target.value)}
+                          className="w-full px-2.5 py-1.5 border border-[#E6E3DC] bg-white"
+                        >
+                          {PURCHASE_LIMIT_OPTIONS.map((lim) => (
+                            <option key={lim} value={lim}>
+                              {lim}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-medium text-[#222222] mb-1">
+                          收款與訂金模式
+                        </label>
+                        <select
+                          value={editPaymentTerm}
+                          onChange={(e) => setEditPaymentTerm(e.target.value as PaymentTermType)}
+                          className="w-full px-2.5 py-1.5 border border-[#E6E3DC] bg-white font-medium"
+                        >
+                          {PAYMENT_TERM_OPTIONS.map((pt) => (
+                            <option key={pt.value} value={pt.value}>
+                              {pt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {editPaymentTerm === 'deposit_balance' && (
+                        <div>
+                          <label className="block font-medium text-[#222222] mb-1">
+                            訂金比例（試算：訂金 $
+                            {calculateDepositBreakdown(
+                              editingProduct.price,
+                              editDepositPercent
+                            ).depositAmount.toLocaleString()}
+                            ）
+                          </label>
+                          <select
+                            value={editDepositPercent}
+                            onChange={(e) => setEditDepositPercent(Number(e.target.value))}
+                            className="w-full px-2.5 py-1.5 border border-[#E6E3DC] bg-white font-bold text-[#7F0019]"
+                          >
+                            {[10, 20, 30, 50, 70, 80].map((pct) => (
+                              <option key={pct} value={pct}>
+                                預付 {pct}% 訂金 ＋ 到貨付 {100 - pct}% 尾款
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block font-bold text-[#7F0019] mb-1">
+                        ★ 當「預購／代購沒買到、現場缺貨或官方砍單」時之訂單取消與退費承諾
+                      </label>
+                      <select
+                        value={editShortagePolicy}
+                        onChange={(e) => setEditShortagePolicy(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border border-[#E6E3DC] bg-white font-medium"
+                      >
+                        {SHORTAGE_POLICY_OPTIONS.map((sp) => (
+                          <option key={sp} value={sp}>
+                            {sp}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block font-medium text-[#222222] mb-1">
+                        買家取消與防棄單規範
+                      </label>
+                      <select
+                        value={editBuyerCancelRule}
+                        onChange={(e) => setEditBuyerCancelRule(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border border-[#E6E3DC] bg-white"
+                      >
+                        {BUYER_CANCEL_RULE_OPTIONS.map((bc) => (
+                          <option key={bc} value={bc}>
+                            {bc}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* 價格、稅務基準與多規格設定 */}
               <div className="border-t border-[#E6E3DC] pt-4 space-y-3">
                 <div className="flex flex-wrap justify-between items-center gap-2">
@@ -825,7 +1042,6 @@ export default function SellerCenterPage() {
                   </div>
                 </div>
 
-                {/* 稅務計價模式選擇 */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {[
                     { id: 'tax_included', label: '所填價位為「含稅價」(內含5%)' },
@@ -894,30 +1110,12 @@ export default function SellerCenterPage() {
                       }
                       className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
                     >
-                      <option value="published">上架中 (published)</option>
-                      <option value="sold_out">已售完 (sold_out)</option>
+                      <option value="published">上架接單中 (published)</option>
+                      <option value="sold_out">完售／代購未買到流單 (sold_out)</option>
                       <option value="archived">已下架 (archived)</option>
                     </select>
                   </div>
                 </div>
-
-                {!editHasMultiSpec && (
-                  <div className="p-2 bg-[#FAF9F5] border border-[#E6E3DC] text-[11px] flex justify-between">
-                    <span className="text-[#666666]">單一商品含稅／未稅換算：</span>
-                    <span className="font-bold text-[#222222]">
-                      含稅 NT${' '}
-                      {calculateTaxBreakdown(
-                        editingProduct.price,
-                        editTaxMode
-                      ).taxIncludedPrice.toLocaleString()}{' '}
-                      ｜ 未稅 NT${' '}
-                      {calculateTaxBreakdown(
-                        editingProduct.price,
-                        editTaxMode
-                      ).taxExcludedPrice.toLocaleString()}
-                    </span>
-                  </div>
-                )}
 
                 {editHasMultiSpec && (
                   <div className="p-3.5 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-2.5">
@@ -940,7 +1138,6 @@ export default function SellerCenterPage() {
                       </button>
                     </div>
 
-                    {/* 明確標示：款式名稱、價位、庫存數量 */}
                     <div className="grid grid-cols-12 gap-2 px-2 py-1.5 bg-[#E6E3DC]/60 font-bold text-[#222222] rounded-sm">
                       <div className="col-span-5">款式名稱</div>
                       <div className="col-span-4">
@@ -1031,7 +1228,7 @@ export default function SellerCenterPage() {
                 )}
               </div>
 
-              {/* 發票開立設定（二聯式對個人 / 三聯式對公司） */}
+              {/* 發票開立設定 */}
               <div className="border-t border-[#E6E3DC] pt-4 space-y-3">
                 <label className="block font-bold text-[#222222]">
                   發票開立與報帳憑證設定（二聯式對個人／三聯式對公司）

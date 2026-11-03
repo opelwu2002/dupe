@@ -7,6 +7,9 @@ import { supabase } from '@/lib/supabase';
 import {
   decodeDescriptionAndMeta,
   calculateTaxBreakdown,
+  calculateDepositBreakdown,
+  FULFILLMENT_TYPE_OPTIONS,
+  PAYMENT_TERM_OPTIONS,
   INVOICE_CAPABILITY_OPTIONS,
 } from '@/lib/productMeta';
 
@@ -44,6 +47,9 @@ export default function ProductDetailPage() {
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [buyQty, setBuyQty] = useState<number>(1);
+
+  // 預購 / 代購等待期與沒買到取消條款知情勾選
+  const [agreedToPreorderTerms, setAgreedToPreorderTerms] = useState(true);
 
   // 買家發票預填狀態
   const [buyerInvoiceChoice, setBuyerInvoiceChoice] = useState<'personal_2' | 'company_3' | 'none'>(
@@ -148,15 +154,29 @@ export default function ProductDetailPage() {
     showMultiVariants && selectedVariant ? selectedVariant.stock : meta.stock;
 
   const priceTax = calculateTaxBreakdown(rawCurrentPrice, meta.taxMode);
+  const totalTaxIncluded = priceTax.taxIncludedPrice * buyQty;
+  const depositCalc = calculateDepositBreakdown(totalTaxIncluded, meta.depositPercent);
+
+  const fulfillObj = FULFILLMENT_TYPE_OPTIONS.find((f) => f.value === meta.fulfillmentType);
+  const paymentTermObj = PAYMENT_TERM_OPTIONS.find((p) => p.value === meta.paymentTerm);
   const invoiceCapObj = INVOICE_CAPABILITY_OPTIONS.find(
     (o) => o.value === meta.invoiceCapability
   );
 
-  // 產生一鍵複製給賣家的採購與發票洽詢單
+  const isPreorderOrProxy = meta.fulfillmentType !== 'in_stock';
+
   const buildOrderInquiryText = () => {
     const specLine =
       showMultiVariants && selectedVariant ? `款式規格：${selectedVariant.name}` : '款式規格：單一標準品';
-    let invoiceLine = '發票需求：個人二手交易／不需發票';
+
+    let paymentLine = `付款模式：${paymentTermObj?.label || '全額付款'}`;
+    if (isPreorderOrProxy && meta.paymentTerm === 'deposit_balance') {
+      paymentLine = `付款階段：預付 ${depositCalc.depositPercent}% 訂金 NT$ ${depositCalc.depositAmount.toLocaleString()} ＋ 到貨尾款 NT$ ${depositCalc.balanceAmount.toLocaleString()}`;
+    } else if (isPreorderOrProxy && meta.paymentTerm === 'pay_after_secured') {
+      paymentLine = `付款階段：先登記代購免預付，待賣家確認買到後再通知匯款`;
+    }
+
+    let invoiceLine = '發票需求：個人交易／不需發票';
     if (meta.invoiceCapability === 'invoice') {
       if (buyerInvoiceChoice === 'company_3') {
         invoiceLine = `發票需求：三聯式統一發票（對公司報帳）｜公司抬頭：${
@@ -173,16 +193,25 @@ export default function ProductDetailPage() {
       }`;
     }
 
-    return [
-      `您好！我在「嘟屁 DUPE」看到您的商品，想與您約定購買：`,
+    const lines = [
+      `您好！我在「嘟屁 DUPE」看到您的【${fulfillObj?.badge || '現貨'}】商品，想與您約定購買／登記：`,
       `・商品名稱：${product.title}`,
-      `・${specLine}`,
-      `・欲購數量：${buyQty} 件`,
+      `・${specLine}（數量：${buyQty} 件）`,
       `・單件價位：含稅 NT$ ${priceTax.taxIncludedPrice.toLocaleString()}（未稅 NT$ ${priceTax.taxExcludedPrice.toLocaleString()}）`,
-      `・合計總額：含稅 NT$ ${(priceTax.taxIncludedPrice * buyQty).toLocaleString()}`,
+      `・合計總額：含稅 NT$ ${totalTaxIncluded.toLocaleString()}`,
+      `・${paymentLine}`,
       `・${invoiceLine}`,
-      `請問目前有現貨嗎？方便如何交付與匯款？謝謝！`,
-    ].join('\n');
+    ];
+
+    if (isPreorderOrProxy) {
+      if (meta.estimatedArrival) {
+        lines.push(`・預計到貨期：${meta.estimatedArrival}（買家已知悉並同意等待期）`);
+      }
+      lines.push(`・未買到／缺貨取消約定：${meta.shortagePolicy}`);
+    }
+
+    lines.push(`請問目前可受理登記／購買嗎？謝謝！`);
+    return lines.join('\n');
   };
 
   return (
@@ -267,18 +296,24 @@ export default function ProductDetailPage() {
           )}
         </div>
 
-        {/* 右側：商品資訊、含稅/未稅價格與發票選擇 */}
+        {/* 右側：商品資訊、預購/代購保障、含稅/未稅價格與發票選擇 */}
         <div className="flex flex-col justify-between">
           <div>
             <div className="flex flex-wrap gap-1.5 mb-3">
-              <span className="px-2 py-0.5 text-[11px] bg-[#7F0019] text-white font-medium rounded-sm">
-                {meta.condition}
+              <span
+                className={`px-2.5 py-0.5 text-[11px] font-bold rounded-sm ${
+                  isPreorderOrProxy
+                    ? 'bg-[#7F0019] text-white'
+                    : 'bg-[#222222] text-white'
+                }`}
+              >
+                {fulfillObj?.badge || '現貨'}
               </span>
               <span className="px-2 py-0.5 text-[11px] bg-[#FAF9F5] border border-[#E6E3DC] text-[#222222] rounded-sm">
-                {meta.negotiable}
+                {meta.condition}
               </span>
               <span className="px-2 py-0.5 text-[11px] bg-[#FAF9F5] border border-[#E6E3DC] text-[#666666] rounded-sm">
-                {meta.category}
+                {meta.negotiable}
               </span>
             </div>
 
@@ -287,7 +322,7 @@ export default function ProductDetailPage() {
             </h1>
 
             {/* 含稅價與未稅價雙重清晰標示面板 */}
-            <div className="p-4 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm mb-5 space-y-1.5">
+            <div className="p-4 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm mb-4 space-y-1.5">
               <div className="flex items-baseline justify-between">
                 <span className="text-xs font-medium text-[#666666]">含稅直購價：</span>
                 <span className="text-2xl font-bold text-[#7F0019]">
@@ -300,19 +335,66 @@ export default function ProductDetailPage() {
                   NT$ {priceTax.taxExcludedPrice.toLocaleString()}
                   {priceTax.taxAmount > 0
                     ? `（內含 5% 營業稅 NT$ ${priceTax.taxAmount.toLocaleString()}）`
-                    : '（個人二手／免徵營業稅）'}
+                    : '（個人交易／免徵營業稅）'}
                 </span>
               </div>
             </div>
 
-            {/* 多規格款式選擇（標示款式名稱、含稅/未稅與庫存） */}
+            {/* 預購 / 海外代購 / 較長備貨 與「沒買到／缺貨砍單取消退費保障」專區 */}
+            {isPreorderOrProxy && (
+              <div className="p-4 bg-white border-2 border-[#7F0019] rounded-sm mb-5 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between border-b border-[#E6E3DC] pb-2">
+                  <span className="font-bold text-[#7F0019]">
+                    ⏳ {fulfillObj?.label}・等待期與未買到退費保障
+                  </span>
+                  {meta.orderCutoffDate && (
+                    <span className="text-[11px] px-2 py-0.5 bg-[#FAF9F5] border border-[#E6E3DC] text-[#222222]">
+                      收單截止：{meta.orderCutoffDate}
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 text-[11px] leading-relaxed">
+                  {meta.estimatedArrival && (
+                    <div>
+                      <span className="font-bold text-[#222222]">預計到貨／出貨期：</span>
+                      <span className="text-[#7F0019] font-semibold">{meta.estimatedArrival}</span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="font-bold text-[#222222]">收款與訂金模式：</span>
+                    <span>{paymentTermObj?.label}</span>
+                  </div>
+                  {meta.paymentTerm === 'deposit_balance' && (
+                    <div className="p-2 bg-[#FAF9F5] border border-[#E6E3DC] text-[#222222]">
+                      訂金試算：先付 {depositCalc.depositPercent}% 訂金{' '}
+                      <strong className="text-[#7F0019]">
+                        NT$ {depositCalc.depositAmount.toLocaleString()}
+                      </strong>{' '}
+                      ＋ 到貨尾款{' '}
+                      <strong>NT$ {depositCalc.balanceAmount.toLocaleString()}</strong>
+                    </div>
+                  )}
+                  <div className="p-2 bg-[#FAF9F5] border-l-2 border-[#7F0019] text-[#222222]">
+                    <div className="font-bold text-[#7F0019]">
+                      【沒買到／缺貨／官方砍單之訂單取消與退費承諾】
+                    </div>
+                    <div>{meta.shortagePolicy}</div>
+                  </div>
+                  <div className="text-[#666666]">
+                    <span className="font-medium text-[#222222]">取消與棄單規範：</span>
+                    {meta.buyerCancelRule}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 多規格款式選擇 */}
             {showMultiVariants ? (
               <div className="mb-5 space-y-2">
-                <div className="flex justify-between items-center text-xs">
-                  <label className="text-[#222222] font-bold">
-                    選擇款式規格（款式名稱 ／ 含未稅價位 ／ 庫存數量）
-                  </label>
-                </div>
+                <label className="block text-xs text-[#222222] font-bold">
+                  選擇款式規格（款式名稱 ／ 含未稅價位 ／ 庫存數量）
+                </label>
                 <div className="grid grid-cols-1 gap-2">
                   {product.product_variants.map((variant) => {
                     const isSelected = selectedVariant?.id === variant.id;
@@ -334,7 +416,7 @@ export default function ProductDetailPage() {
                         </span>
                         <span className="text-[11px]">
                           含稅 ${vTax.taxIncludedPrice.toLocaleString()}（未稅 $
-                          {vTax.taxExcludedPrice.toLocaleString()}）｜庫存 {variant.stock} 件
+                          {vTax.taxExcludedPrice.toLocaleString()}）｜剩餘 {variant.stock} 件
                         </span>
                       </button>
                     );
@@ -343,8 +425,12 @@ export default function ProductDetailPage() {
               </div>
             ) : (
               <div className="mb-5 py-2 px-3 bg-white border border-[#E6E3DC] rounded-sm flex items-center justify-between text-xs">
-                <span className="text-[#666666]">可售庫存數量</span>
-                <span className="font-bold text-[#222222]">剩餘 {currentStock} 件</span>
+                <span className="text-[#666666]">
+                  {isPreorderOrProxy ? '目前可登記／代購名額' : '可售現貨庫存'}
+                </span>
+                <span className="font-bold text-[#222222]">
+                  剩餘 {currentStock} 件（{meta.purchaseLimit}）
+                </span>
               </div>
             )}
 
@@ -362,7 +448,9 @@ export default function ProductDetailPage() {
                   <div className="text-[11px] text-[#666666]">
                     賣家支援：{meta.invoiceTypes.join('、')}
                   </div>
-                  <div className="font-medium text-[#222222]">預選您的發票需求（將自動帶入私訊明細）：</div>
+                  <div className="font-medium text-[#222222]">
+                    預選您的發票需求（將自動帶入私訊明細）：
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
@@ -422,7 +510,7 @@ export default function ProductDetailPage() {
             </div>
 
             {/* 交易條件與保固資訊 */}
-            <div className="border-t border-[#E6E3DC] pt-4 mb-6 space-y-2 text-xs text-[#666666]">
+            <div className="border-t border-[#E6E3DC] pt-4 mb-5 space-y-2 text-xs text-[#666666]">
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <span className="font-medium text-[#222222]">運費規則：</span>
@@ -450,13 +538,31 @@ export default function ProductDetailPage() {
             </div>
           </div>
 
-          <div className="pt-4 border-t border-[#E6E3DC] space-y-2">
+          <div className="pt-4 border-t border-[#E6E3DC] space-y-3">
+            {isPreorderOrProxy && (
+              <label className="flex items-start space-x-2 text-xs text-[#222222] bg-[#FAF9F5] p-2.5 border border-[#E6E3DC] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedToPreorderTerms}
+                  onChange={(e) => setAgreedToPreorderTerms(e.target.checked)}
+                  className="mt-0.5 accent-[#7F0019]"
+                />
+                <span>
+                  我已詳閱本商品為<strong>【{fulfillObj?.badge}】</strong>
+                  ，了解較長備貨等待期，並同意若遇現場沒買到／缺貨砍單時，依賣家所列之取消與退費保障條款辦理。
+                </span>
+              </label>
+            )}
+
             <button
               type="button"
+              disabled={isPreorderOrProxy && !agreedToPreorderTerms}
               onClick={() => setIsModalOpen(true)}
-              className="w-full h-12 bg-[#7F0019] hover:bg-[#660014] text-white text-sm font-medium tracking-wider rounded-sm transition-colors flex items-center justify-center"
+              className="w-full h-12 bg-[#7F0019] hover:bg-[#660014] text-white text-sm font-medium tracking-wider rounded-sm transition-colors flex items-center justify-center disabled:opacity-40"
             >
-              查看賣家聯絡方式 ／ 產生發票與採購洽詢單
+              {isPreorderOrProxy
+                ? '查看賣家聯絡方式 ／ 產生預購・代購登記與退費保障單'
+                : '查看賣家聯絡方式 ／ 產生發票與採購洽詢單'}
             </button>
             <p className="text-[11px] text-[#666666] text-center">
               本平台僅提供去中心化商品資訊刊登與媒合看板服務，不介入買賣雙方實質交易、金流收付與商品交付，亦不承擔買賣履約與瑕疵擔保責任。
@@ -474,7 +580,7 @@ export default function ProductDetailPage() {
         </div>
       </section>
 
-      {/* 聯繫賣家與一鍵複製採購/發票明細彈窗 */}
+      {/* 聯繫賣家與一鍵複製採購/預購退費保障明細彈窗 */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white border border-[#E6E3DC] w-full max-w-lg rounded-sm p-6 shadow-sm max-h-[92vh] overflow-y-auto">
@@ -491,11 +597,10 @@ export default function ProductDetailPage() {
               </button>
             </div>
 
-            {/* 自動產生的採購與二聯/三聯發票洽詢單 */}
             <div className="mb-5 p-3.5 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-[#222222]">
-                  📋 採購與發票洽詢明細（可直接複製貼給賣家）
+                  📋 採購／代購登記與退費保障明細（可直接複製貼給賣家）
                 </span>
                 <button
                   type="button"
