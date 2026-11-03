@@ -6,8 +6,17 @@ import { useRouter } from 'next/navigation';
 import ImageUploader5 from '@/components/ImageUploader5';
 import {
   encodeDescriptionWithMeta,
+  calculateTaxBreakdown,
+  TaxMode,
+  InvoiceCapability,
   PRODUCT_CATEGORIES,
   PRODUCT_CONDITIONS,
+  INVOICE_CAPABILITY_OPTIONS,
+  INVOICE_TYPE_OPTIONS,
+  NEGOTIABLE_OPTIONS,
+  SHIPPING_FEE_OPTIONS,
+  LEAD_TIME_OPTIONS,
+  WARRANTY_OPTIONS,
 } from '@/lib/productMeta';
 
 export default function NewProductPage() {
@@ -25,22 +34,39 @@ export default function NewProductPage() {
   const [images, setImages] = useState<string[]>([]);
   const [description, setDescription] = useState('');
 
-  // 規格與價格模式（預設為「單一規格商品」，不強迫顯示多餘規格按鈕）
+  // 價格、稅務與多規格模式
+  const [taxMode, setTaxMode] = useState<TaxMode>('tax_included');
   const [hasMultiSpec, setHasMultiSpec] = useState(false);
-  const [price, setPrice] = useState<number>(300);
+  const [price, setPrice] = useState<number>(3000);
   const [singleStock, setSingleStock] = useState<number>(1);
   const [variants, setVariants] = useState([
-    { name: '黑色款', price: 300, stock: 1 },
-    { name: '米白款', price: 300, stock: 1 },
+    { name: 'A4 Size', price: 30000, stock: 1 },
+    { name: 'B4 Size', price: 27000, stock: 1 },
   ]);
 
-  // 支援交易方式
-  const [deliveryMethods, setDeliveryMethods] = useState<string[]>(['店到店（7-11 / 全家）', '面交當面點交']);
+  // 發票開立設定
+  const [invoiceCapability, setInvoiceCapability] = useState<InvoiceCapability>('invoice');
+  const [invoiceTypes, setInvoiceTypes] = useState<string[]>([
+    '二聯式發票（對個人／自然人買家）',
+    '三聯式發票（對公司行號／附統一編號與抬頭）',
+  ]);
+
+  // 周全交易條件
+  const [negotiable, setNegotiable] = useState(NEGOTIABLE_OPTIONS[0]);
+  const [shippingFeeRule, setShippingFeeRule] = useState(SHIPPING_FEE_OPTIONS[0]);
+  const [leadTime, setLeadTime] = useState(LEAD_TIME_OPTIONS[0]);
+  const [warranty, setWarranty] = useState(WARRANTY_OPTIONS[0]);
+  const [deliveryMethods, setDeliveryMethods] = useState<string[]>([
+    '店到店（7-11 / 全家）',
+    '面交當面點交',
+  ]);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function checkStore() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         router.push('/auth');
         return;
@@ -65,12 +91,17 @@ export default function NewProductPage() {
     checkStore();
   }, [router]);
 
-  const toggleDeliveryMethod = (method: string) => {
-    if (deliveryMethods.includes(method)) {
-      if (deliveryMethods.length === 1) return; // 至少保留一種
-      setDeliveryMethods(deliveryMethods.filter((m) => m !== method));
+  const toggleArrayItem = (
+    list: string[],
+    setList: (v: string[]) => void,
+    item: string,
+    minOne = true
+  ) => {
+    if (list.includes(item)) {
+      if (minOne && list.length <= 1) return;
+      setList(list.filter((x) => x !== item));
     } else {
-      setDeliveryMethods([...deliveryMethods, method]);
+      setList([...list, item]);
     }
   };
 
@@ -102,6 +133,13 @@ export default function NewProductPage() {
         ? variants.reduce((acc, v) => acc + (Number(v.stock) || 0), 0)
         : Number(singleStock) || 1,
       deliveryMethods,
+      taxMode,
+      invoiceCapability,
+      invoiceTypes: invoiceCapability === 'invoice' ? invoiceTypes : [],
+      negotiable,
+      shippingFeeRule,
+      leadTime,
+      warranty,
     });
 
     const res = await fetch('/api/system', {
@@ -138,15 +176,19 @@ export default function NewProductPage() {
     return <div className="p-12 text-center text-xs text-[#666666]">載入刊登工作台中...</div>;
   }
 
+  const singleTaxInfo = calculateTaxBreakdown(price, taxMode);
+
   return (
-    <main className="max-w-3xl mx-auto px-4 py-10">
+    <main className="max-w-4xl mx-auto px-4 py-10">
       <div className="bg-white border border-[#E6E3DC] rounded-sm p-8 shadow-sm">
         <div className="border-b border-[#E6E3DC] pb-4 mb-6 flex justify-between items-end">
           <div>
             <span className="text-[11px] text-[#7F0019] font-medium">賣場：{storeName}</span>
-            <h1 className="text-xl font-bold text-[#222222] mt-0.5">刊登全新 / 二手銷售品項</h1>
+            <h1 className="text-xl font-bold text-[#222222] mt-0.5">
+              刊登銷售品項（專業稅務與多規格工作台）
+            </h1>
             <p className="text-xs text-[#666666] mt-1">
-              支援最多 5 張實拍照片上傳・自由切換單一二手品或多規格款式・0 平台抽成
+              支援 5 張實拍照片上傳・含稅/未稅即時換算・主動標示二聯式(個人)/三聯式(公司)發票資訊
             </p>
           </div>
         </div>
@@ -166,7 +208,7 @@ export default function NewProductPage() {
           {/* 區塊 2：商品名稱、分類、二手物況與來源 */}
           <section className="space-y-4">
             <h2 className="text-sm font-bold text-[#222222] border-l-4 border-[#7F0019] pl-2.5">
-              商品基本資訊與物況
+              一、商品基本資訊與物況
             </h2>
 
             <div>
@@ -179,7 +221,7 @@ export default function NewProductPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white focus:outline-none focus:border-[#7F0019]"
-                placeholder="例：【日本帶回】極簡真皮大容量手提托特包（附防塵袋）"
+                placeholder="例：【日本直送】真皮手提托特包（A4/B4 雙尺寸可選）"
               />
             </div>
 
@@ -191,7 +233,7 @@ export default function NewProductPage() {
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white"
+                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
                 >
                   {PRODUCT_CATEGORIES.map((c) => (
                     <option key={c} value={c}>
@@ -208,7 +250,7 @@ export default function NewProductPage() {
                 <select
                   value={condition}
                   onChange={(e) => setCondition(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white"
+                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
                 >
                   {PRODUCT_CONDITIONS.map((cond) => (
                     <option key={cond} value={cond}>
@@ -226,18 +268,18 @@ export default function NewProductPage() {
                   type="text"
                   value={brand}
                   onChange={(e) => setBrand(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white"
-                  placeholder="例：日本東京專櫃購入"
+                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
+                  placeholder="例：日本專櫃購入 / 台灣公司貨"
                 />
               </div>
             </div>
           </section>
 
-          {/* 區塊 3：價格、庫存與規格模式 */}
+          {/* 區塊 3：價格、含稅/未稅基準與多規格款式設定 */}
           <section className="space-y-4 border-t border-[#E6E3DC] pt-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <h2 className="text-sm font-bold text-[#222222] border-l-4 border-[#7F0019] pl-2.5">
-                售價與商品規格設定
+                二、價位（含稅／未稅標示）、規格款式與庫存設定
               </h2>
               <div className="flex items-center space-x-2 bg-[#FAF9F5] p-1 border border-[#E6E3DC] rounded-sm text-xs">
                 <button
@@ -249,7 +291,7 @@ export default function NewProductPage() {
                       : 'text-[#666666] hover:text-[#222222]'
                   }`}
                 >
-                  單一商品（無多規格）
+                  單一商品
                 </button>
                 <button
                   type="button"
@@ -260,119 +302,346 @@ export default function NewProductPage() {
                       : 'text-[#666666] hover:text-[#222222]'
                   }`}
                 >
-                  多規格款式（如顏色/尺寸）
+                  多規格款式
+                </button>
+              </div>
+            </div>
+
+            {/* 含稅 / 未稅計價基準選擇 */}
+            <div className="p-4 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-2">
+              <label className="block text-xs font-bold text-[#222222]">
+                設定商品價位之稅務基準（系統將自動為買家同步標示「含稅價」與「未稅價」）
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setTaxMode('tax_included')}
+                  className={`p-2.5 text-left border rounded-sm text-xs transition-colors ${
+                    taxMode === 'tax_included'
+                      ? 'border-[#7F0019] bg-white text-[#7F0019] font-bold'
+                      : 'border-[#E6E3DC] bg-white text-[#222222]'
+                  }`}
+                >
+                  <div>● 所填價位為「含稅價」</div>
+                  <div className="text-[10px] text-[#666666] font-normal mt-0.5">
+                    自動反推標示未稅價 (÷1.05)
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTaxMode('tax_excluded')}
+                  className={`p-2.5 text-left border rounded-sm text-xs transition-colors ${
+                    taxMode === 'tax_excluded'
+                      ? 'border-[#7F0019] bg-white text-[#7F0019] font-bold'
+                      : 'border-[#E6E3DC] bg-white text-[#222222]'
+                  }`}
+                >
+                  <div>● 所填價位為「未稅價」</div>
+                  <div className="text-[10px] text-[#666666] font-normal mt-0.5">
+                    自動加計標示 5% 含稅價 (×1.05)
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTaxMode('tax_free')}
+                  className={`p-2.5 text-left border rounded-sm text-xs transition-colors ${
+                    taxMode === 'tax_free'
+                      ? 'border-[#7F0019] bg-white text-[#7F0019] font-bold'
+                      : 'border-[#E6E3DC] bg-white text-[#222222]'
+                  }`}
+                >
+                  <div>● 個人二手／免徵營業稅</div>
+                  <div className="text-[10px] text-[#666666] font-normal mt-0.5">
+                    未稅與含稅同價，不另加收 5%
+                  </div>
                 </button>
               </div>
             </div>
 
             {!hasMultiSpec ? (
-              <div className="p-4 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-[#222222] mb-1">
-                    商品直購售價 (NT$) <span className="text-[#7F0019]">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    value={price}
-                    onChange={(e) => setPrice(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-sm font-bold border border-[#E6E3DC] rounded-sm bg-white"
-                  />
+              <div className="p-4 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-[#222222] mb-1">
+                      商品價位 (NT$ -{' '}
+                      {taxMode === 'tax_included'
+                        ? '含稅'
+                        : taxMode === 'tax_excluded'
+                        ? '未稅'
+                        : '免稅直購'}
+                      ) <span className="text-[#7F0019]">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      value={price}
+                      onChange={(e) => setPrice(Number(e.target.value))}
+                      className="w-full px-3 py-2 text-sm font-bold border border-[#E6E3DC] rounded-sm bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-[#222222] mb-1">
+                      庫存數量（件） <span className="text-[#7F0019]">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={singleStock}
+                      onChange={(e) => setSingleStock(Number(e.target.value))}
+                      className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-white"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-[#222222] mb-1">
-                    可售庫存數量（件） <span className="text-[#7F0019]">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    value={singleStock}
-                    onChange={(e) => setSingleStock(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-white"
-                  />
+                <div className="p-2.5 bg-white border border-[#E6E3DC] text-xs flex flex-wrap justify-between items-center gap-2">
+                  <span className="text-[#666666]">前台即時標示預覽：</span>
+                  <span className="font-bold text-[#222222]">
+                    含稅價：NT$ {singleTaxInfo.taxIncludedPrice.toLocaleString()} ｜ 未稅價：NT${' '}
+                    {singleTaxInfo.taxExcludedPrice.toLocaleString()}
+                    {singleTaxInfo.taxAmount > 0 &&
+                      `（5% 營業稅額：NT$ ${singleTaxInfo.taxAmount.toLocaleString()}）`}
+                  </span>
                 </div>
-                <p className="sm:col-span-2 text-[11px] text-[#666666]">
-                  ✓ 目前為「單一商品」模式：前台商品頁將直接顯示售價與剩餘件數，不會出現多餘的「選擇規格：標準規格」按鈕。
-                </p>
               </div>
             ) : (
               <div className="p-4 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-medium text-[#222222]">
-                    設定不同款式選項（例如：黑色、白色、大號、小號）
-                  </span>
+                <div className="flex justify-between items-center pb-2 border-b border-[#E6E3DC]">
+                  <div>
+                    <span className="text-xs font-bold text-[#222222]">多規格款式設定</span>
+                    <span className="ml-2 text-[11px] text-[#666666]">
+                      （清楚標示款式名稱、含稅/未稅價位與庫存數量）
+                    </span>
+                  </div>
                   <button
                     type="button"
                     onClick={addVariantRow}
-                    className="text-xs text-[#7F0019] font-medium hover:underline"
+                    className="px-2.5 py-1 bg-[#7F0019] text-white text-xs font-medium rounded-sm hover:bg-[#660014]"
                   >
-                    + 新增一組款式規格
+                    + 新增款式
                   </button>
                 </div>
-                <div className="grid grid-cols-12 gap-2 text-[11px] text-[#666666] px-1">
-                  <div className="col-span-5">款式 / 規格名稱</div>
-                  <div className="col-span-3">對應售價 (NT$)</div>
-                  <div className="col-span-3">庫存數量</div>
-                  <div className="col-span-1 text-center">移除</div>
-                </div>
-                {variants.map((v, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                    <input
-                      type="text"
-                      required
-                      placeholder="例：焦糖棕 / M號"
-                      value={v.name}
-                      onChange={(e) => {
-                        const next = [...variants];
-                        next[idx].name = e.target.value;
-                        setVariants(next);
-                      }}
-                      className="col-span-5 px-2.5 py-1.5 text-xs border border-[#E6E3DC] bg-white"
-                    />
-                    <input
-                      type="number"
-                      required
-                      min={0}
-                      value={v.price}
-                      onChange={(e) => {
-                        const next = [...variants];
-                        next[idx].price = Number(e.target.value);
-                        setVariants(next);
-                      }}
-                      className="col-span-3 px-2.5 py-1.5 text-xs border border-[#E6E3DC] bg-white"
-                    />
-                    <input
-                      type="number"
-                      required
-                      min={0}
-                      value={v.stock}
-                      onChange={(e) => {
-                        const next = [...variants];
-                        next[idx].stock = Number(e.target.value);
-                        setVariants(next);
-                      }}
-                      className="col-span-3 px-2.5 py-1.5 text-xs border border-[#E6E3DC] bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeVariantRow(idx)}
-                      className="col-span-1 text-center text-xs text-[#666666] hover:text-[#7F0019]"
-                    >
-                      ✕
-                    </button>
+
+                {/* 明確欄位標頭 */}
+                <div className="grid grid-cols-12 gap-2 px-2 py-1.5 bg-[#E6E3DC]/50 text-xs font-bold text-[#222222] rounded-sm">
+                  <div className="col-span-5">款式名稱 *</div>
+                  <div className="col-span-4">
+                    價位 (NT$ -{' '}
+                    {taxMode === 'tax_included'
+                      ? '填含稅'
+                      : taxMode === 'tax_excluded'
+                      ? '填未稅'
+                      : '直購價'}
+                    ) *
                   </div>
-                ))}
+                  <div className="col-span-2">庫存數量 *</div>
+                  <div className="col-span-1 text-center">操作</div>
+                </div>
+
+                {variants.map((v, idx) => {
+                  const vTax = calculateTaxBreakdown(v.price, taxMode);
+                  return (
+                    <div
+                      key={idx}
+                      className="p-2.5 bg-white border border-[#E6E3DC] rounded-sm space-y-1.5"
+                    >
+                      <div className="grid grid-cols-12 gap-2 items-center">
+                        <div className="col-span-5">
+                          <input
+                            type="text"
+                            required
+                            placeholder="例：A4 Size / 黑色款"
+                            value={v.name}
+                            onChange={(e) => {
+                              const next = [...variants];
+                              next[idx].name = e.target.value;
+                              setVariants(next);
+                            }}
+                            className="w-full px-2.5 py-1.5 text-xs border border-[#E6E3DC] bg-[#FAF9F5] focus:bg-white"
+                          />
+                        </div>
+                        <div className="col-span-4">
+                          <input
+                            type="number"
+                            required
+                            min={0}
+                            placeholder="輸入價位"
+                            value={v.price}
+                            onChange={(e) => {
+                              const next = [...variants];
+                              next[idx].price = Number(e.target.value);
+                              setVariants(next);
+                            }}
+                            className="w-full px-2.5 py-1.5 text-xs font-bold border border-[#E6E3DC] bg-[#FAF9F5] focus:bg-white"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            type="number"
+                            required
+                            min={0}
+                            placeholder="庫存"
+                            value={v.stock}
+                            onChange={(e) => {
+                              const next = [...variants];
+                              next[idx].stock = Number(e.target.value);
+                              setVariants(next);
+                            }}
+                            className="w-full px-2.5 py-1.5 text-xs border border-[#E6E3DC] bg-[#FAF9F5] focus:bg-white"
+                          />
+                        </div>
+                        <div className="col-span-1 text-center">
+                          <button
+                            type="button"
+                            onClick={() => removeVariantRow(idx)}
+                            className="text-xs text-[#666666] hover:text-[#7F0019] font-bold"
+                            title="刪除此款式"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-[#666666] flex justify-between px-1">
+                        <span>款式 {idx + 1} 稅務價格換算：</span>
+                        <span className="font-medium text-[#222222]">
+                          含稅 NT$ {vTax.taxIncludedPrice.toLocaleString()} ／ 未稅 NT${' '}
+                          {vTax.taxExcludedPrice.toLocaleString()}
+                          {vTax.taxAmount > 0 && `（稅額 $${vTax.taxAmount.toLocaleString()}）`}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
 
-          {/* 區塊 4：交易方式與詳細物況描述 */}
+          {/* 區塊 4：發票與報帳憑證設定（二聯式對個人／三聯式對公司） */}
           <section className="space-y-4 border-t border-[#E6E3DC] pt-6">
             <h2 className="text-sm font-bold text-[#222222] border-l-4 border-[#7F0019] pl-2.5">
-              交付方式與詳細物況說明
+              三、發票開立與稅務報帳憑證設定（主動揭露予買家）
             </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {INVOICE_CAPABILITY_OPTIONS.map((opt) => {
+                const active = invoiceCapability === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setInvoiceCapability(opt.value)}
+                    className={`p-3.5 text-left border rounded-sm transition-colors ${
+                      active
+                        ? 'border-[#7F0019] bg-[#FAF9F5] ring-1 ring-[#7F0019]'
+                        : 'border-[#E6E3DC] bg-white hover:bg-[#FAF9F5]/50'
+                    }`}
+                  >
+                    <div className="text-xs font-bold text-[#222222] flex items-center justify-between">
+                      <span>{opt.label}</span>
+                      {active && <span className="text-[#7F0019]">✓ 已選用</span>}
+                    </div>
+                    <p className="text-[11px] text-[#666666] mt-1 leading-relaxed">{opt.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {invoiceCapability === 'invoice' && (
+              <div className="p-4 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-2.5">
+                <label className="block text-xs font-bold text-[#7F0019]">
+                  請勾選支援開立之統一發票類別（可複選，買家可於商品頁預填公司抬頭與 8 碼統編）：
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {INVOICE_TYPE_OPTIONS.map((t) => {
+                    const checked = invoiceTypes.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => toggleArrayItem(invoiceTypes, setInvoiceTypes, t, true)}
+                        className={`px-3 py-1.5 text-xs border rounded-sm transition-colors ${
+                          checked
+                            ? 'border-[#7F0019] bg-white text-[#7F0019] font-bold'
+                            : 'border-[#E6E3DC] bg-white text-[#666666]'
+                        }`}
+                      >
+                        {checked ? '☑ ' : '☐ '}
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* 區塊 5：周全交易條件、運費規則與售後保固 */}
+          <section className="space-y-4 border-t border-[#E6E3DC] pt-6">
+            <h2 className="text-sm font-bold text-[#222222] border-l-4 border-[#7F0019] pl-2.5">
+              四、交易條件、運費負擔、出貨時效與售後保固
+            </h2>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-[#222222] mb-1">議價空間設定</label>
+                <select
+                  value={negotiable}
+                  onChange={(e) => setNegotiable(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
+                >
+                  {NEGOTIABLE_OPTIONS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#222222] mb-1">運費負擔方式</label>
+                <select
+                  value={shippingFeeRule}
+                  onChange={(e) => setShippingFeeRule(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
+                >
+                  {SHIPPING_FEE_OPTIONS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#222222] mb-1">預估備貨與出貨時效</label>
+                <select
+                  value={leadTime}
+                  onChange={(e) => setLeadTime(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
+                >
+                  {LEAD_TIME_OPTIONS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#222222] mb-1">售後與保固說明</label>
+                <select
+                  value={warranty}
+                  onChange={(e) => setWarranty(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
+                >
+                  {WARRANTY_OPTIONS.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <div>
               <label className="block text-xs font-medium text-[#222222] mb-2">
@@ -385,7 +654,9 @@ export default function NewProductPage() {
                     <button
                       key={method}
                       type="button"
-                      onClick={() => toggleDeliveryMethod(method)}
+                      onClick={() =>
+                        toggleArrayItem(deliveryMethods, setDeliveryMethods, method, true)
+                      }
                       className={`px-3 py-1.5 text-xs border rounded-sm transition-colors ${
                         active
                           ? 'border-[#7F0019] bg-[#FAF9F5] text-[#7F0019] font-medium'
@@ -402,7 +673,7 @@ export default function NewProductPage() {
 
             <div>
               <label className="block text-xs font-medium text-[#222222] mb-1">
-                詳細說明與二手物況備註 <span className="text-[#7F0019]">*</span>
+                詳細商品說明與物況備註 <span className="text-[#7F0019]">*</span>
               </label>
               <textarea
                 rows={6}

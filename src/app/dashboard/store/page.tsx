@@ -8,8 +8,17 @@ import ImageUploader5 from '@/components/ImageUploader5';
 import {
   decodeDescriptionAndMeta,
   encodeDescriptionWithMeta,
+  calculateTaxBreakdown,
+  TaxMode,
+  InvoiceCapability,
   PRODUCT_CATEGORIES,
   PRODUCT_CONDITIONS,
+  INVOICE_CAPABILITY_OPTIONS,
+  INVOICE_TYPE_OPTIONS,
+  NEGOTIABLE_OPTIONS,
+  SHIPPING_FEE_OPTIONS,
+  LEAD_TIME_OPTIONS,
+  WARRANTY_OPTIONS,
 } from '@/lib/productMeta';
 
 interface VariantItem {
@@ -65,11 +74,28 @@ export default function SellerCenterPage() {
   const [editCleanDesc, setEditCleanDesc] = useState('');
   const [editHasMultiSpec, setEditHasMultiSpec] = useState(false);
   const [editSingleStock, setEditSingleStock] = useState(1);
-  const [editDeliveryMethods, setEditDeliveryMethods] = useState<string[]>(['店到店', '面交自取']);
+  const [editDeliveryMethods, setEditDeliveryMethods] = useState<string[]>([
+    '店到店（7-11 / 全家）',
+    '面交當面點交',
+  ]);
+
+  // 編輯視窗之稅務與發票狀態
+  const [editTaxMode, setEditTaxMode] = useState<TaxMode>('tax_included');
+  const [editInvoiceCapability, setEditInvoiceCapability] = useState<InvoiceCapability>('none');
+  const [editInvoiceTypes, setEditInvoiceTypes] = useState<string[]>([
+    '二聯式發票（對個人／自然人買家）',
+    '三聯式發票（對公司行號／附統一編號與抬頭）',
+  ]);
+  const [editNegotiable, setEditNegotiable] = useState(NEGOTIABLE_OPTIONS[0]);
+  const [editShippingFeeRule, setEditShippingFeeRule] = useState(SHIPPING_FEE_OPTIONS[0]);
+  const [editLeadTime, setEditLeadTime] = useState(LEAD_TIME_OPTIONS[0]);
+  const [editWarranty, setEditWarranty] = useState(WARRANTY_OPTIONS[0]);
 
   const loadSellerData = useCallback(async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) {
       router.push('/auth');
       return;
@@ -118,9 +144,18 @@ export default function SellerCenterPage() {
 
   const openEditModal = (p: ProductItem) => {
     const { cleanDescription, meta } = decodeDescriptionAndMeta(p.description, p.product_variants);
+    const normalizedVariants =
+      p.product_variants && p.product_variants.length > 0
+        ? p.product_variants.map((v) => ({
+            ...v,
+            name: v.name === '__SINGLE__' ? '標準款式' : v.name,
+          }))
+        : [{ name: '款式一', price: p.price, stock: 1 }];
+
     setEditingProduct({
       ...p,
       images: Array.isArray(p.images) ? p.images.slice(0, 5) : [],
+      product_variants: normalizedVariants,
     });
     setEditCleanDesc(cleanDescription);
     setEditCategory(meta.category);
@@ -129,6 +164,22 @@ export default function SellerCenterPage() {
     setEditHasMultiSpec(meta.hasMultiSpec);
     setEditSingleStock(meta.stock);
     setEditDeliveryMethods(meta.deliveryMethods);
+    setEditTaxMode(meta.taxMode);
+    setEditInvoiceCapability(meta.invoiceCapability);
+    setEditInvoiceTypes(meta.invoiceTypes);
+    setEditNegotiable(meta.negotiable);
+    setEditShippingFeeRule(meta.shippingFeeRule);
+    setEditLeadTime(meta.leadTime);
+    setEditWarranty(meta.warranty);
+  };
+
+  const toggleEditInvoiceType = (t: string) => {
+    if (editInvoiceTypes.includes(t)) {
+      if (editInvoiceTypes.length <= 1) return;
+      setEditInvoiceTypes(editInvoiceTypes.filter((x) => x !== t));
+    } else {
+      setEditInvoiceTypes([...editInvoiceTypes, t]);
+    }
   };
 
   const handleSaveStore = async (e: React.FormEvent) => {
@@ -235,6 +286,10 @@ export default function SellerCenterPage() {
     if (!editingProduct) return;
     setSaving(true);
 
+    const computedMainPrice = editHasMultiSpec
+      ? Math.min(...(editingProduct.product_variants || []).map((v) => Number(v.price) || 0))
+      : Number(editingProduct.price) || 0;
+
     const encodedDescription = encodeDescriptionWithMeta(editCleanDesc, {
       category: editCategory,
       condition: editCondition,
@@ -247,6 +302,13 @@ export default function SellerCenterPage() {
           )
         : Number(editSingleStock) || 1,
       deliveryMethods: editDeliveryMethods,
+      taxMode: editTaxMode,
+      invoiceCapability: editInvoiceCapability,
+      invoiceTypes: editInvoiceCapability === 'invoice' ? editInvoiceTypes : [],
+      negotiable: editNegotiable,
+      shippingFeeRule: editShippingFeeRule,
+      leadTime: editLeadTime,
+      warranty: editWarranty,
     });
 
     await fetch('/api/system', {
@@ -259,7 +321,7 @@ export default function SellerCenterPage() {
           store_id: editingProduct.store_id,
           title: editingProduct.title,
           description: encodedDescription,
-          price: editingProduct.price,
+          price: computedMainPrice,
           images: editingProduct.images,
           status: editingProduct.status,
           has_multi_spec: editHasMultiSpec,
@@ -270,7 +332,7 @@ export default function SellerCenterPage() {
     });
     setEditingProduct(null);
     setSaving(false);
-    setMessage('商品資訊、照片與售價已同步更新至前台！');
+    setMessage('商品規格、含稅/未稅價位與發票設定已同步更新至前台！');
     loadSellerData();
   };
 
@@ -290,7 +352,10 @@ export default function SellerCenterPage() {
           </p>
         </div>
         <div className="flex items-center space-x-2">
-          <Link className="px-4 py-2 bg-[#7F0019] hover:bg-[#660014] text-white text-xs font-medium rounded-sm" href="/dashboard/products/new">
+          <Link
+            className="px-4 py-2 bg-[#7F0019] hover:bg-[#660014] text-white text-xs font-medium rounded-sm"
+            href="/dashboard/products/new"
+          >
             + 新增刊登商品
           </Link>
         </div>
@@ -354,7 +419,10 @@ export default function SellerCenterPage() {
           ) : myProducts.length === 0 ? (
             <div className="text-center py-10 space-y-3">
               <p className="text-sm text-[#666666]">目前賣場尚無商品</p>
-              <Link className="inline-block px-4 py-2 bg-[#7F0019] text-white text-xs rounded-sm" href="/dashboard/products/new">
+              <Link
+                className="inline-block px-4 py-2 bg-[#7F0019] text-white text-xs rounded-sm"
+                href="/dashboard/products/new"
+              >
                 + 立即刊登第一件商品
               </Link>
             </div>
@@ -363,10 +431,10 @@ export default function SellerCenterPage() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[#E6E3DC] text-[#666666] bg-[#FAF9F5]">
-                    <th className="p-3">商品資訊（相片數）</th>
-                    <th className="p-3">分類 / 物況</th>
-                    <th className="p-3">售價</th>
-                    <th className="p-3">規格 / 庫存</th>
+                    <th className="p-3">商品資訊</th>
+                    <th className="p-3">分類 / 發票設定</th>
+                    <th className="p-3">含稅價 / 未稅價</th>
+                    <th className="p-3">款式規格與庫存</th>
                     <th className="p-3">狀態</th>
                     <th className="p-3 text-right">管理操作</th>
                   </tr>
@@ -377,6 +445,7 @@ export default function SellerCenterPage() {
                       p.description,
                       p.product_variants
                     );
+                    const taxInfo = calculateTaxBreakdown(p.price, meta.taxMode);
                     return (
                       <tr key={p.id} className="hover:bg-[#FAF9F5]/60">
                         <td className="p-3 flex items-center space-x-3">
@@ -397,7 +466,10 @@ export default function SellerCenterPage() {
                             )}
                           </div>
                           <div>
-                            <Link className="font-bold text-[#222222] hover:text-[#7F0019]" href={`/products/${p.id}`}>
+                            <Link
+                              className="font-bold text-[#222222] hover:text-[#7F0019]"
+                              href={`/products/${p.id}`}
+                            >
                               {p.title}
                             </Link>
                             <div className="text-[11px] text-[#666666] line-clamp-1">
@@ -407,21 +479,32 @@ export default function SellerCenterPage() {
                         </td>
                         <td className="p-3">
                           <div className="font-medium text-[#222222]">{meta.category}</div>
-                          <div className="text-[11px] text-[#7F0019]">{meta.condition}</div>
+                          <div className="text-[10px] text-[#7F0019]">
+                            {meta.invoiceCapability === 'invoice'
+                              ? `可開發票 (${meta.invoiceTypes.map((t) => t.slice(0, 3)).join('/')})`
+                              : meta.invoiceCapability === 'receipt'
+                              ? '可開免用發票收據'
+                              : '個人二手無發票'}
+                          </div>
                         </td>
-                        <td className="p-3 font-bold text-[#222222]">
-                          NT$ {p.price.toLocaleString()}
+                        <td className="p-3">
+                          <div className="font-bold text-[#7F0019]">
+                            含稅 NT$ {taxInfo.taxIncludedPrice.toLocaleString()}
+                          </div>
+                          <div className="text-[11px] text-[#666666]">
+                            未稅 NT$ {taxInfo.taxExcludedPrice.toLocaleString()}
+                          </div>
                         </td>
                         <td className="p-3">
                           {meta.hasMultiSpec ? (
                             p.product_variants?.map((v, idx) => (
-                              <div key={idx} className="text-[11px] text-[#666666]">
-                                {v.name}：NT${v.price} (庫存 {v.stock})
+                              <div key={idx} className="text-[11px] text-[#222222]">
+                                {v.name}：${v.price.toLocaleString()} (庫存 {v.stock})
                               </div>
                             ))
                           ) : (
                             <span className="text-[11px] text-[#222222]">
-                              單一規格（庫存 {meta.stock} 件）
+                              單一商品（庫存 {meta.stock} 件）
                             </span>
                           )}
                         </td>
@@ -631,10 +714,10 @@ export default function SellerCenterPage() {
         </div>
       )}
 
-      {/* 完整升級版：編輯商品彈窗（含 5 張照片上傳、分類物況、單一/多規格切換） */}
+      {/* 完整升級版：編輯商品彈窗（含明確欄位標頭、含稅/未稅換算、二聯/三聯發票設定） */}
       {editingProduct && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E6E3DC] w-full max-w-2xl rounded-sm p-6 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white border border-[#E6E3DC] w-full max-w-3xl rounded-sm p-6 max-h-[92vh] overflow-y-auto">
             <div className="flex justify-between items-center pb-3 border-b border-[#E6E3DC] mb-4">
               <h3 className="text-base font-bold text-[#222222]">
                 編輯商品：{editingProduct.title}
@@ -660,7 +743,7 @@ export default function SellerCenterPage() {
               </div>
 
               <div>
-                <label className="block font-medium text-[#222222] mb-1">商品名稱 *</label>
+                <label className="block font-bold text-[#222222] mb-1">商品名稱 *</label>
                 <input
                   type="text"
                   required
@@ -712,16 +795,17 @@ export default function SellerCenterPage() {
                 </div>
               </div>
 
+              {/* 價格、稅務基準與多規格設定 */}
               <div className="border-t border-[#E6E3DC] pt-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-[#222222]">價格與規格模式</span>
+                <div className="flex flex-wrap justify-between items-center gap-2">
+                  <span className="font-bold text-[#222222]">價格、含稅/未稅基準與規格模式</span>
                   <div className="flex space-x-2">
                     <button
                       type="button"
                       onClick={() => setEditHasMultiSpec(false)}
-                      className={`px-2.5 py-1 rounded-sm ${
+                      className={`px-3 py-1 rounded-sm ${
                         !editHasMultiSpec
-                          ? 'bg-[#7F0019] text-white'
+                          ? 'bg-[#7F0019] text-white font-medium'
                           : 'border border-[#E6E3DC] text-[#666666]'
                       }`}
                     >
@@ -730,9 +814,9 @@ export default function SellerCenterPage() {
                     <button
                       type="button"
                       onClick={() => setEditHasMultiSpec(true)}
-                      className={`px-2.5 py-1 rounded-sm ${
+                      className={`px-3 py-1 rounded-sm ${
                         editHasMultiSpec
-                          ? 'bg-[#7F0019] text-white'
+                          ? 'bg-[#7F0019] text-white font-medium'
                           : 'border border-[#E6E3DC] text-[#666666]'
                       }`}
                     >
@@ -741,9 +825,40 @@ export default function SellerCenterPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3">
+                {/* 稅務計價模式選擇 */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: 'tax_included', label: '所填價位為「含稅價」(內含5%)' },
+                    { id: 'tax_excluded', label: '所填價位為「未稅價」(外加5%)' },
+                    { id: 'tax_free', label: '個人二手／免稅 (含未稅同價)' },
+                  ].map((tm) => (
+                    <button
+                      key={tm.id}
+                      type="button"
+                      onClick={() => setEditTaxMode(tm.id as TaxMode)}
+                      className={`p-2 border rounded-sm text-left ${
+                        editTaxMode === tm.id
+                          ? 'border-[#7F0019] bg-[#FAF9F5] text-[#7F0019] font-bold'
+                          : 'border-[#E6E3DC] bg-white text-[#666666]'
+                      }`}
+                    >
+                      {editTaxMode === tm.id ? '● ' : '○ '}
+                      {tm.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-[#666666] mb-1">主售價 (NT$)</label>
+                    <label className="block text-[#222222] font-medium mb-1">
+                      主售價 (NT$ -{' '}
+                      {editTaxMode === 'tax_included'
+                        ? '含稅'
+                        : editTaxMode === 'tax_excluded'
+                        ? '未稅'
+                        : '免稅'}
+                      )
+                    </label>
                     <input
                       type="number"
                       required
@@ -759,7 +874,7 @@ export default function SellerCenterPage() {
                   </div>
                   {!editHasMultiSpec && (
                     <div>
-                      <label className="block text-[#666666] mb-1">可售庫存數量</label>
+                      <label className="block text-[#222222] font-medium mb-1">庫存數量</label>
                       <input
                         type="number"
                         required
@@ -771,7 +886,7 @@ export default function SellerCenterPage() {
                     </div>
                   )}
                   <div>
-                    <label className="block text-[#666666] mb-1">狀態</label>
+                    <label className="block text-[#222222] font-medium mb-1">狀態</label>
                     <select
                       value={editingProduct.status}
                       onChange={(e) =>
@@ -786,10 +901,28 @@ export default function SellerCenterPage() {
                   </div>
                 </div>
 
+                {!editHasMultiSpec && (
+                  <div className="p-2 bg-[#FAF9F5] border border-[#E6E3DC] text-[11px] flex justify-between">
+                    <span className="text-[#666666]">單一商品含稅／未稅換算：</span>
+                    <span className="font-bold text-[#222222]">
+                      含稅 NT${' '}
+                      {calculateTaxBreakdown(
+                        editingProduct.price,
+                        editTaxMode
+                      ).taxIncludedPrice.toLocaleString()}{' '}
+                      ｜ 未稅 NT${' '}
+                      {calculateTaxBreakdown(
+                        editingProduct.price,
+                        editTaxMode
+                      ).taxExcludedPrice.toLocaleString()}
+                    </span>
+                  </div>
+                )}
+
                 {editHasMultiSpec && (
-                  <div className="p-3 bg-[#FAF9F5] border border-[#E6E3DC] space-y-2">
+                  <div className="p-3.5 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-2.5">
                     <div className="flex justify-between items-center">
-                      <span className="font-medium">多規格款式設定</span>
+                      <span className="font-bold text-[#222222]">多規格款式設定</span>
                       <button
                         type="button"
                         onClick={() =>
@@ -797,73 +930,221 @@ export default function SellerCenterPage() {
                             ...editingProduct,
                             product_variants: [
                               ...(editingProduct.product_variants || []),
-                              { name: '新款項', price: editingProduct.price, stock: 1 },
+                              { name: '新款式', price: editingProduct.price, stock: 1 },
                             ],
                           })
                         }
-                        className="text-[#7F0019] hover:underline"
+                        className="px-2.5 py-1 bg-[#7F0019] text-white text-xs rounded-sm"
                       >
                         + 新增款式
                       </button>
                     </div>
-                    {(editingProduct.product_variants || []).map((v, idx) => (
-                      <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                        <input
-                          type="text"
-                          value={v.name === '__SINGLE__' ? '款式一' : v.name}
-                          onChange={(e) => {
-                            const next = [...editingProduct.product_variants];
-                            next[idx] = { ...next[idx], name: e.target.value };
-                            setEditingProduct({ ...editingProduct, product_variants: next });
-                          }}
-                          className="col-span-5 px-2 py-1 border border-[#E6E3DC] bg-white"
-                          placeholder="款式名稱"
-                        />
-                        <input
-                          type="number"
-                          value={v.price}
-                          onChange={(e) => {
-                            const next = [...editingProduct.product_variants];
-                            next[idx] = { ...next[idx], price: Number(e.target.value) };
-                            setEditingProduct({ ...editingProduct, product_variants: next });
-                          }}
-                          className="col-span-3 px-2 py-1 border border-[#E6E3DC] bg-white"
-                          placeholder="售價"
-                        />
-                        <input
-                          type="number"
-                          value={v.stock}
-                          onChange={(e) => {
-                            const next = [...editingProduct.product_variants];
-                            next[idx] = { ...next[idx], stock: Number(e.target.value) };
-                            setEditingProduct({ ...editingProduct, product_variants: next });
-                          }}
-                          className="col-span-3 px-2 py-1 border border-[#E6E3DC] bg-white"
-                          placeholder="庫存"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (editingProduct.product_variants.length <= 1) return;
-                            setEditingProduct({
-                              ...editingProduct,
-                              product_variants: editingProduct.product_variants.filter(
-                                (_, i) => i !== idx
-                              ),
-                            });
-                          }}
-                          className="col-span-1 text-center text-[#7F0019]"
-                        >
-                          ✕
-                        </button>
+
+                    {/* 明確標示：款式名稱、價位、庫存數量 */}
+                    <div className="grid grid-cols-12 gap-2 px-2 py-1.5 bg-[#E6E3DC]/60 font-bold text-[#222222] rounded-sm">
+                      <div className="col-span-5">款式名稱</div>
+                      <div className="col-span-4">
+                        價位 (NT$ -{' '}
+                        {editTaxMode === 'tax_included'
+                          ? '含稅'
+                          : editTaxMode === 'tax_excluded'
+                          ? '未稅'
+                          : '免稅'}
+                        )
                       </div>
-                    ))}
+                      <div className="col-span-2">庫存數量</div>
+                      <div className="col-span-1 text-center">操作</div>
+                    </div>
+
+                    {(editingProduct.product_variants || []).map((v, idx) => {
+                      const vTax = calculateTaxBreakdown(v.price, editTaxMode);
+                      return (
+                        <div
+                          key={idx}
+                          className="p-2 bg-white border border-[#E6E3DC] rounded-sm space-y-1"
+                        >
+                          <div className="grid grid-cols-12 gap-2 items-center">
+                            <input
+                              type="text"
+                              required
+                              value={v.name === '__SINGLE__' ? '款式一' : v.name}
+                              onChange={(e) => {
+                                const next = [...editingProduct.product_variants];
+                                next[idx] = { ...next[idx], name: e.target.value };
+                                setEditingProduct({ ...editingProduct, product_variants: next });
+                              }}
+                              className="col-span-5 px-2.5 py-1.5 border border-[#E6E3DC] bg-[#FAF9F5]"
+                              placeholder="請輸入款式名稱"
+                            />
+                            <input
+                              type="number"
+                              required
+                              value={v.price}
+                              onChange={(e) => {
+                                const next = [...editingProduct.product_variants];
+                                next[idx] = { ...next[idx], price: Number(e.target.value) };
+                                setEditingProduct({ ...editingProduct, product_variants: next });
+                              }}
+                              className="col-span-4 px-2.5 py-1.5 font-bold border border-[#E6E3DC] bg-[#FAF9F5]"
+                              placeholder="價位"
+                            />
+                            <input
+                              type="number"
+                              required
+                              value={v.stock}
+                              onChange={(e) => {
+                                const next = [...editingProduct.product_variants];
+                                next[idx] = { ...next[idx], stock: Number(e.target.value) };
+                                setEditingProduct({ ...editingProduct, product_variants: next });
+                              }}
+                              className="col-span-2 px-2.5 py-1.5 border border-[#E6E3DC] bg-[#FAF9F5]"
+                              placeholder="庫存數量"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (editingProduct.product_variants.length <= 1) return;
+                                setEditingProduct({
+                                  ...editingProduct,
+                                  product_variants: editingProduct.product_variants.filter(
+                                    (_, i) => i !== idx
+                                  ),
+                                });
+                              }}
+                              className="col-span-1 text-center text-[#7F0019] font-bold"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="text-[11px] text-[#666666] flex justify-between px-1">
+                            <span>款式「{v.name}」含未稅對照：</span>
+                            <span className="font-medium text-[#222222]">
+                              含稅 NT$ {vTax.taxIncludedPrice.toLocaleString()} ｜ 未稅 NT${' '}
+                              {vTax.taxExcludedPrice.toLocaleString()}
+                              {vTax.taxAmount > 0 && `（稅額 $${vTax.taxAmount.toLocaleString()}）`}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
 
+              {/* 發票開立設定（二聯式對個人 / 三聯式對公司） */}
+              <div className="border-t border-[#E6E3DC] pt-4 space-y-3">
+                <label className="block font-bold text-[#222222]">
+                  發票開立與報帳憑證設定（二聯式對個人／三聯式對公司）
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {INVOICE_CAPABILITY_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setEditInvoiceCapability(opt.value)}
+                      className={`p-2.5 text-left border rounded-sm ${
+                        editInvoiceCapability === opt.value
+                          ? 'border-[#7F0019] bg-[#FAF9F5] text-[#7F0019] font-bold'
+                          : 'border-[#E6E3DC] bg-white text-[#222222]'
+                      }`}
+                    >
+                      <div>{opt.label}</div>
+                      <div className="text-[10px] text-[#666666] font-normal">{opt.desc}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {editInvoiceCapability === 'invoice' && (
+                  <div className="p-3 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-2">
+                    <div className="text-[11px] font-bold text-[#7F0019]">
+                      勾選可提供給買家的發票格式：
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {INVOICE_TYPE_OPTIONS.map((t) => {
+                        const checked = editInvoiceTypes.includes(t);
+                        return (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => toggleEditInvoiceType(t)}
+                            className={`px-2.5 py-1 border rounded-sm ${
+                              checked
+                                ? 'border-[#7F0019] bg-white text-[#7F0019] font-bold'
+                                : 'border-[#E6E3DC] bg-white text-[#666666]'
+                            }`}
+                          >
+                            {checked ? '☑ ' : '☐ '}
+                            {t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 交易條件與保固 */}
+              <div className="border-t border-[#E6E3DC] pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-[#222222] mb-1">議價空間</label>
+                  <select
+                    value={editNegotiable}
+                    onChange={(e) => setEditNegotiable(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-[#E6E3DC] bg-[#FAF9F5]"
+                  >
+                    {NEGOTIABLE_OPTIONS.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-[#222222] mb-1">運費負擔方式</label>
+                  <select
+                    value={editShippingFeeRule}
+                    onChange={(e) => setEditShippingFeeRule(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-[#E6E3DC] bg-[#FAF9F5]"
+                  >
+                    {SHIPPING_FEE_OPTIONS.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-[#222222] mb-1">出貨時效</label>
+                  <select
+                    value={editLeadTime}
+                    onChange={(e) => setEditLeadTime(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-[#E6E3DC] bg-[#FAF9F5]"
+                  >
+                    {LEAD_TIME_OPTIONS.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-[#222222] mb-1">售後保固</label>
+                  <select
+                    value={editWarranty}
+                    onChange={(e) => setEditWarranty(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-[#E6E3DC] bg-[#FAF9F5]"
+                  >
+                    {WARRANTY_OPTIONS.map((o) => (
+                      <option key={o} value={o}>
+                        {o}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div>
-                <label className="block font-medium text-[#222222] mb-1">詳細商品描述</label>
+                <label className="block font-bold text-[#222222] mb-1">詳細商品描述</label>
                 <textarea
                   rows={4}
                   value={editCleanDesc}
