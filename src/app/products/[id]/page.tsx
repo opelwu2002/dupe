@@ -1,7 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
 
 interface ProductVariant {
   id: string;
@@ -10,40 +12,80 @@ interface ProductVariant {
   stock: number;
 }
 
-interface StoreInfo {
+interface ProductData {
   id: string;
-  name: string;
-  contact_line?: string;
-  contact_phone?: string;
-  meetup_location?: string;
-  custom_shipping_note?: string;
+  title: string;
+  description: string;
+  price: number;
+  images: string[];
+  product_variants: ProductVariant[];
+  stores: {
+    id: string;
+    name: string;
+    contact_line?: string;
+    contact_phone?: string;
+    meetup_location?: string;
+    custom_shipping_note?: string;
+  } | null;
 }
 
 export default function ProductDetailPage() {
-  const product = {
-    id: 'prod-001',
-    title: '無染色純棉收納袋 / 輕量多功能置物袋',
-    description:
-      '採用未經漂染的自然純棉帆布製作，保留原棉質樸點狀纖維。容量充足，適用於居家物品收納、文具分類或日常外出隨身攜帶。',
-    price: 350,
-    images: ['https://images.unsplash.com/photo-1544816155-12df9643f363?auto=format&fit=crop&w=800&q=80'],
-    variants: [
-      { id: 'v1', name: '標準款（原色米白）', price: 350, stock: 12 },
-      { id: 'v2', name: '大容量款（原色米白）', price: 450, stock: 5 },
-    ],
-    store: {
-      id: 'store-001',
-      name: '原質日常工作室',
-      contact_line: 'dupe_seller_01',
-      contact_phone: '0912-345-678',
-      meetup_location: '台北捷運松山站 3 號出口或南京復興站',
-      custom_shipping_note: '7-11 / 全家純取貨（運費 60 元由買方自理），亦可約定捷運站面交。',
-    } as StoreInfo,
-  };
+  const params = useParams();
+  const productId = params?.id as string;
 
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant>(product.variants[0]);
+  const [product, setProduct] = useState<ProductData | null>(null);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadProduct() {
+      if (!productId) return;
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          id,
+          title,
+          description,
+          price,
+          images,
+          product_variants (
+            id,
+            name,
+            price,
+            stock
+          ),
+          stores (
+            id,
+            name,
+            contact_line,
+            contact_phone,
+            meetup_location,
+            custom_shipping_note
+          )
+        `)
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (!error && data) {
+        const prod = data as unknown as ProductData;
+        setProduct(prod);
+        if (prod.product_variants && prod.product_variants.length > 0) {
+          setSelectedVariant(prod.product_variants[0]);
+        } else {
+          setSelectedVariant({
+            id: 'default',
+            name: '單一規格',
+            price: prod.price,
+            stock: 1,
+          });
+        }
+      }
+      setLoading(false);
+    }
+    loadProduct();
+  }, [productId]);
 
   const copyToClipboard = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
@@ -51,21 +93,36 @@ export default function ProductDetailPage() {
     setTimeout(() => setCopyStatus(null), 2000);
   };
 
-  return (
-    <main className="max-w-5xl mx-auto px-4 py-10">
-      <div className="mb-6">
-        <Link href="/" className="text-xs text-[#666666] hover:text-[#222222] transition-colors">
-          ← 返回商品看板
+  if (loading) {
+    return <div className="p-16 text-center text-xs text-[#666666]">讀取商品資訊中...</div>;
+  }
+
+  if (!product) {
+    return (
+      <div className="p-16 text-center space-y-4">
+        <p className="text-sm text-[#222222]">查無此商品或該商品已下架</p>
+        <Link className="inline-block text-xs text-[#7F0019] underline" href="/">
+          返回首頁
         </Link>
       </div>
+    );
+  }
 
+  const currentPrice = selectedVariant ? selectedVariant.price : product.price;
+
+  return (
+    <main className="max-w-5xl mx-auto px-4 py-10">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
         <div className="aspect-square bg-white border border-[#E6E3DC] rounded-sm overflow-hidden flex items-center justify-center">
-          <img
-            src={product.images[0]}
-            alt={product.title}
-            className="w-full h-full object-cover"
-          />
+          {product.images && product.images[0] ? (
+            <img
+              src={product.images[0]}
+              alt={product.title}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <span className="text-xs text-[#666666]">無商品圖片</span>
+          )}
         </div>
 
         <div className="flex flex-col justify-between">
@@ -77,43 +134,47 @@ export default function ProductDetailPage() {
               {product.title}
             </h1>
             <div className="text-2xl font-bold text-[#222222] mb-6">
-              NT$ {selectedVariant.price.toLocaleString()}
+              NT$ {currentPrice.toLocaleString()}
             </div>
 
-            <div className="mb-6 space-y-2">
-              <label className="block text-xs text-[#666666] font-medium tracking-wide">
-                選擇規格
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {product.variants.map((variant) => {
-                  const isSelected = selectedVariant.id === variant.id;
-                  return (
-                    <button
-                      key={variant.id}
-                      type="button"
-                      onClick={() => setSelectedVariant(variant)}
-                      className={`px-3 py-2 text-xs border rounded-sm transition-colors ${
-                        isSelected
-                          ? 'border-[#7F0019] bg-white text-[#7F0019] font-medium'
-                          : 'border-[#E6E3DC] bg-white text-[#222222] hover:border-[#666666]'
-                      }`}
-                    >
-                      {variant.name} (剩餘 {variant.stock})
-                    </button>
-                  );
-                })}
+            {product.product_variants && product.product_variants.length > 0 && (
+              <div className="mb-6 space-y-2">
+                <label className="block text-xs text-[#666666] font-medium tracking-wide">
+                  選擇規格
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {product.product_variants.map((variant) => {
+                    const isSelected = selectedVariant?.id === variant.id;
+                    return (
+                      <button
+                        key={variant.id}
+                        type="button"
+                        onClick={() => setSelectedVariant(variant)}
+                        className={`px-3 py-2 text-xs border rounded-sm transition-colors ${
+                          isSelected
+                            ? 'border-[#7F0019] bg-white text-[#7F0019] font-medium'
+                            : 'border-[#E6E3DC] bg-white text-[#222222] hover:border-[#666666]'
+                        }`}
+                      >
+                        {variant.name} (剩餘 {variant.stock})
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="border-t border-[#E6E3DC] pt-4 mb-6 space-y-2 text-xs text-[#666666]">
               <div>
                 <span className="font-medium text-[#222222]">寄送說明：</span>{' '}
-                {product.store.custom_shipping_note}
+                {product.stores?.custom_shipping_note || '無特殊寄送限制，請私訊約定。'}
               </div>
-              <div>
-                <span className="font-medium text-[#222222]">面交地點：</span>{' '}
-                {product.store.meetup_location}
-              </div>
+              {product.stores?.meetup_location && (
+                <div>
+                  <span className="font-medium text-[#222222]">面交地點：</span>{' '}
+                  {product.stores.meetup_location}
+                </div>
+              )}
             </div>
           </div>
 
@@ -137,14 +198,8 @@ export default function ProductDetailPage() {
           商品說明與備註
         </h2>
         <div className="bg-white p-6 border border-[#E6E3DC] rounded-sm text-xs leading-relaxed text-[#222222] whitespace-pre-line">
-          {product.description}
+          {product.description || '賣家未提供進一步備註。'}
         </div>
-      </section>
-
-      <section className="mt-8 p-4 bg-white border border-[#E6E3DC] rounded-sm">
-        <p className="text-[11px] text-[#666666] leading-relaxed">
-          免責聲明：本平台（Dupe 嘟屁）僅提供去中心化商品資訊刊登與 P2P 媒合展示看板，不介入買賣雙方實質交易、金流收付與商品交付流程，亦不承擔任何買賣履約保證與物之瑕疵擔保責任。
-        </p>
       </section>
 
       {isModalOpen && (
@@ -152,7 +207,7 @@ export default function ProductDetailPage() {
           <div className="bg-white border border-[#E6E3DC] w-full max-w-md rounded-sm p-6 shadow-sm">
             <div className="flex items-center justify-between pb-3 border-b border-[#E6E3DC] mb-4">
               <h3 className="text-sm font-bold text-[#222222]">
-                聯繫賣家：{product.store.name}
+                聯繫賣家：{product.stores?.name || '未命名賣場'}
               </h3>
               <button
                 type="button"
@@ -164,21 +219,21 @@ export default function ProductDetailPage() {
             </div>
 
             <p className="text-xs text-[#666666] mb-4 leading-relaxed">
-              您所選的規格為「{selectedVariant.name}（NT$ {selectedVariant.price}）」，可透過以下管道直接與賣家洽談：
+              您所選的規格為「{selectedVariant?.name}（NT$ {currentPrice}）」，可透過以下管道直接與賣家洽談：
             </p>
 
             <div className="space-y-3 mb-6">
-              {product.store.contact_line && (
+              {product.stores?.contact_line && (
                 <div className="p-3 bg-[#FAF9F5] border border-[#E6E3DC] flex items-center justify-between">
                   <div>
                     <div className="text-[10px] text-[#666666]">LINE ID</div>
                     <div className="text-xs font-medium text-[#222222]">
-                      {product.store.contact_line}
+                      {product.stores.contact_line}
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(product.store.contact_line!, 'line')}
+                    onClick={() => copyToClipboard(product.stores!.contact_line!, 'line')}
                     className="text-xs px-2.5 py-1 border border-[#E6E3DC] bg-white hover:bg-[#FAF9F5]"
                   >
                     {copyStatus === 'line' ? '已複製' : '複製'}
@@ -186,31 +241,33 @@ export default function ProductDetailPage() {
                 </div>
               )}
 
-              {product.store.contact_phone && (
+              {product.stores?.contact_phone && (
                 <div className="p-3 bg-[#FAF9F5] border border-[#E6E3DC] flex items-center justify-between">
                   <div>
                     <div className="text-[10px] text-[#666666]">聯絡電話</div>
                     <div className="text-xs font-medium text-[#222222]">
-                      {product.store.contact_phone}
+                      {product.stores.contact_phone}
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(product.store.contact_phone!, 'phone')}
+                    onClick={() => copyToClipboard(product.stores!.contact_phone!, 'phone')}
                     className="text-xs px-2.5 py-1 border border-[#E6E3DC] bg-white hover:bg-[#FAF9F5]"
                   >
                     {copyStatus === 'phone' ? '已複製' : '複製'}
                   </button>
                 </div>
               )}
+
+              {!product.stores?.contact_line && !product.stores?.contact_phone && (
+                <div className="p-3 bg-[#FAF9F5] border border-[#E6E3DC] text-xs text-[#666666]">
+                  賣家尚未填寫公開聯絡電話或 LINE，建議在面交地點約定見面。
+                </div>
+              )}
             </div>
 
-            <div className="text-[11px] text-[#666666] bg-[#FAF9F5] p-3 border border-[#E6E3DC] leading-relaxed mb-3">
+            <div className="text-[11px] text-[#666666] bg-[#FAF9F5] p-3 border border-[#E6E3DC] leading-relaxed mb-4">
               交易提示：建議優先選擇具備貨態追蹤之物流或當面清點面交，切勿依指示操作 ATM 進行身分驗證。
-            </div>
-
-            <div className="text-[10px] text-[#666666] leading-relaxed mb-4">
-              免責聲明：本平台（Dupe 嘟屁）僅提供去中心化商品資訊刊登與 P2P 媒合展示看板，不介入買賣雙方實質交易、金流收付與商品交付流程，亦不承擔任何買賣履約保證與物之瑕疵擔保責任。
             </div>
 
             <button
