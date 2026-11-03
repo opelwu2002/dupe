@@ -4,6 +4,13 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import ImageUploader5 from '@/components/ImageUploader5';
+import {
+  decodeDescriptionAndMeta,
+  encodeDescriptionWithMeta,
+  PRODUCT_CATEGORIES,
+  PRODUCT_CONDITIONS,
+} from '@/lib/productMeta';
 
 interface VariantItem {
   id?: string;
@@ -49,9 +56,16 @@ export default function SellerCenterPage() {
   const [meetupLocation, setMeetupLocation] = useState('');
   const [shippingNote, setShippingNote] = useState('');
 
-  // 賣場商品列表
+  // 賣場商品列表與編輯狀態
   const [myProducts, setMyProducts] = useState<ProductItem[]>([]);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
+  const [editCategory, setEditCategory] = useState(PRODUCT_CATEGORIES[0]);
+  const [editCondition, setEditCondition] = useState(PRODUCT_CONDITIONS[0]);
+  const [editBrand, setEditBrand] = useState('');
+  const [editCleanDesc, setEditCleanDesc] = useState('');
+  const [editHasMultiSpec, setEditHasMultiSpec] = useState(false);
+  const [editSingleStock, setEditSingleStock] = useState(1);
+  const [editDeliveryMethods, setEditDeliveryMethods] = useState<string[]>(['店到店', '面交自取']);
 
   const loadSellerData = useCallback(async () => {
     setLoading(true);
@@ -101,6 +115,21 @@ export default function SellerCenterPage() {
   useEffect(() => {
     loadSellerData();
   }, [loadSellerData]);
+
+  const openEditModal = (p: ProductItem) => {
+    const { cleanDescription, meta } = decodeDescriptionAndMeta(p.description, p.product_variants);
+    setEditingProduct({
+      ...p,
+      images: Array.isArray(p.images) ? p.images.slice(0, 5) : [],
+    });
+    setEditCleanDesc(cleanDescription);
+    setEditCategory(meta.category);
+    setEditCondition(meta.condition);
+    setEditBrand(meta.brand);
+    setEditHasMultiSpec(meta.hasMultiSpec);
+    setEditSingleStock(meta.stock);
+    setEditDeliveryMethods(meta.deliveryMethods);
+  };
 
   const handleSaveStore = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,6 +197,7 @@ export default function SellerCenterPage() {
   };
 
   const handleProductStatusToggle = async (prod: ProductItem, newStatus: string) => {
+    const { meta } = decodeDescriptionAndMeta(prod.description, prod.product_variants);
     await fetch('/api/system', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -181,6 +211,8 @@ export default function SellerCenterPage() {
           price: prod.price,
           images: prod.images,
           status: newStatus,
+          has_multi_spec: meta.hasMultiSpec,
+          single_stock: meta.stock,
           variants: prod.product_variants,
         },
       }),
@@ -202,6 +234,21 @@ export default function SellerCenterPage() {
     e.preventDefault();
     if (!editingProduct) return;
     setSaving(true);
+
+    const encodedDescription = encodeDescriptionWithMeta(editCleanDesc, {
+      category: editCategory,
+      condition: editCondition,
+      brand: editBrand.trim(),
+      hasMultiSpec: editHasMultiSpec,
+      stock: editHasMultiSpec
+        ? (editingProduct.product_variants || []).reduce(
+            (acc, v) => acc + (Number(v.stock) || 0),
+            0
+          )
+        : Number(editSingleStock) || 1,
+      deliveryMethods: editDeliveryMethods,
+    });
+
     await fetch('/api/system', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -211,16 +258,19 @@ export default function SellerCenterPage() {
           id: editingProduct.id,
           store_id: editingProduct.store_id,
           title: editingProduct.title,
-          description: editingProduct.description,
+          description: encodedDescription,
           price: editingProduct.price,
           images: editingProduct.images,
           status: editingProduct.status,
-          variants: editingProduct.product_variants,
+          has_multi_spec: editHasMultiSpec,
+          single_stock: editSingleStock,
+          variants: editHasMultiSpec ? editingProduct.product_variants : [],
         },
       }),
     });
     setEditingProduct(null);
     setSaving(false);
+    setMessage('商品資訊、照片與售價已同步更新至前台！');
     loadSellerData();
   };
 
@@ -252,7 +302,6 @@ export default function SellerCenterPage() {
         </div>
       )}
 
-      {/* 導覽分頁 */}
       <div className="flex space-x-2 mb-6 border-b border-[#E6E3DC]">
         <button
           type="button"
@@ -289,7 +338,6 @@ export default function SellerCenterPage() {
         </button>
       </div>
 
-      {/* 分頁 1：商品管理 */}
       {activeTab === 'products' && (
         <div className="bg-white border border-[#E6E3DC] rounded-sm p-6">
           {!storeId ? (
@@ -315,89 +363,119 @@ export default function SellerCenterPage() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[#E6E3DC] text-[#666666] bg-[#FAF9F5]">
-                    <th className="p-3">商品資訊</th>
+                    <th className="p-3">商品資訊（相片數）</th>
+                    <th className="p-3">分類 / 物況</th>
                     <th className="p-3">售價</th>
-                    <th className="p-3">規格與庫存</th>
+                    <th className="p-3">規格 / 庫存</th>
                     <th className="p-3">狀態</th>
                     <th className="p-3 text-right">管理操作</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E6E3DC]">
-                  {myProducts.map((p) => (
-                    <tr key={p.id} className="hover:bg-[#FAF9F5]/60">
-                      <td className="p-3 flex items-center space-x-3">
-                        <div className="w-12 h-12 bg-[#FAF9F5] border border-[#E6E3DC] flex-shrink-0 overflow-hidden flex items-center justify-center">
-                          {p.images?.[0] ? (
-                            <img src={p.images[0]} alt={p.title} className="w-full h-full object-cover" />
-                          ) : (
-                            <span className="text-[10px] text-[#666666]">無圖</span>
-                          )}
-                        </div>
-                        <div>
-                          <Link className="font-medium text-[#222222] hover:text-[#7F0019]" href={`/products/${p.id}`}>
-                            {p.title}
-                          </Link>
-                          <div className="text-[11px] text-[#666666] line-clamp-1">{p.description}</div>
-                        </div>
-                      </td>
-                      <td className="p-3 font-medium">NT$ {p.price.toLocaleString()}</td>
-                      <td className="p-3">
-                        {p.product_variants?.map((v, idx) => (
-                          <div key={idx} className="text-[11px] text-[#666666]">
-                            {v.name}：庫存 {v.stock}
+                  {myProducts.map((p) => {
+                    const { cleanDescription, meta } = decodeDescriptionAndMeta(
+                      p.description,
+                      p.product_variants
+                    );
+                    return (
+                      <tr key={p.id} className="hover:bg-[#FAF9F5]/60">
+                        <td className="p-3 flex items-center space-x-3">
+                          <div className="relative w-12 h-12 bg-[#FAF9F5] border border-[#E6E3DC] flex-shrink-0 overflow-hidden flex items-center justify-center">
+                            {p.images?.[0] ? (
+                              <img
+                                src={p.images[0]}
+                                alt={p.title}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-[10px] text-[#666666]">無圖</span>
+                            )}
+                            {p.images?.length > 1 && (
+                              <span className="absolute bottom-0 right-0 px-1 bg-black/70 text-white text-[9px]">
+                                {p.images.length}張
+                              </span>
+                            )}
                           </div>
-                        ))}
-                      </td>
-                      <td className="p-3">
-                        <span
-                          className={`px-2 py-0.5 text-[11px] rounded-sm ${
-                            p.status === 'published'
-                              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                              : 'bg-gray-100 text-gray-600 border border-gray-300'
-                          }`}
-                        >
-                          {p.status === 'published'
-                            ? '上架中'
-                            : p.status === 'sold_out'
-                            ? '已售完'
-                            : '已下架'}
-                        </span>
-                      </td>
-                      <td className="p-3 text-right space-x-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingProduct(p)}
-                          className="px-2 py-1 border border-[#E6E3DC] bg-white hover:bg-[#FAF9F5]"
-                        >
-                          編輯
-                        </button>
-                        {p.status === 'published' ? (
+                          <div>
+                            <Link className="font-bold text-[#222222] hover:text-[#7F0019]" href={`/products/${p.id}`}>
+                              {p.title}
+                            </Link>
+                            <div className="text-[11px] text-[#666666] line-clamp-1">
+                              {cleanDescription}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-medium text-[#222222]">{meta.category}</div>
+                          <div className="text-[11px] text-[#7F0019]">{meta.condition}</div>
+                        </td>
+                        <td className="p-3 font-bold text-[#222222]">
+                          NT$ {p.price.toLocaleString()}
+                        </td>
+                        <td className="p-3">
+                          {meta.hasMultiSpec ? (
+                            p.product_variants?.map((v, idx) => (
+                              <div key={idx} className="text-[11px] text-[#666666]">
+                                {v.name}：NT${v.price} (庫存 {v.stock})
+                              </div>
+                            ))
+                          ) : (
+                            <span className="text-[11px] text-[#222222]">
+                              單一規格（庫存 {meta.stock} 件）
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <span
+                            className={`px-2 py-0.5 text-[11px] rounded-sm ${
+                              p.status === 'published'
+                                ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                : 'bg-gray-100 text-gray-600 border border-gray-300'
+                            }`}
+                          >
+                            {p.status === 'published'
+                              ? '上架中'
+                              : p.status === 'sold_out'
+                              ? '已售完'
+                              : '已下架'}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right space-x-2">
                           <button
                             type="button"
-                            onClick={() => handleProductStatusToggle(p, 'archived')}
-                            className="px-2 py-1 border border-[#E6E3DC] bg-white text-[#666666] hover:text-[#222222]"
+                            onClick={() => openEditModal(p)}
+                            className="px-2.5 py-1 border border-[#E6E3DC] bg-white hover:bg-[#FAF9F5] font-medium"
                           >
-                            下架
+                            編輯
                           </button>
-                        ) : (
+                          {p.status === 'published' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleProductStatusToggle(p, 'archived')}
+                              className="px-2 py-1 border border-[#E6E3DC] bg-white text-[#666666] hover:text-[#222222]"
+                            >
+                              下架
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleProductStatusToggle(p, 'published')}
+                              className="px-2 py-1 border border-[#7F0019] text-[#7F0019] bg-white"
+                            >
+                              重新上架
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => handleProductStatusToggle(p, 'published')}
-                            className="px-2 py-1 border border-[#7F0019] text-[#7F0019] bg-white"
+                            onClick={() => handleDeleteProduct(p.id)}
+                            className="px-2 py-1 text-[#7F0019] hover:underline"
                           >
-                            重新上架
+                            刪除
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteProduct(p.id)}
-                          className="px-2 py-1 text-[#7F0019] hover:underline"
-                        >
-                          刪除
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -405,7 +483,6 @@ export default function SellerCenterPage() {
         </div>
       )}
 
-      {/* 分頁 2：賣場設定 */}
       {activeTab === 'store' && (
         <div className="bg-white border border-[#E6E3DC] rounded-sm p-6 max-w-2xl">
           <h2 className="text-sm font-bold text-[#222222] mb-4">賣場基本資料與交易聯絡設定</h2>
@@ -418,7 +495,6 @@ export default function SellerCenterPage() {
                 value={storeName}
                 onChange={(e) => setStoreName(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
-                placeholder="例：原質日常工作室"
               />
             </div>
             <div>
@@ -432,7 +508,9 @@ export default function SellerCenterPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-[#666666] mb-1">公開聯繫 LINE ID</label>
+                <label className="block text-xs font-medium text-[#666666] mb-1">
+                  公開聯繫 LINE ID
+                </label>
                 <input
                   type="text"
                   value={contactLine}
@@ -457,17 +535,17 @@ export default function SellerCenterPage() {
                 value={meetupLocation}
                 onChange={(e) => setMeetupLocation(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
-                placeholder="例：台北市松山區捷運松山站"
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#666666] mb-1">自訂交付 / 寄送說明</label>
+              <label className="block text-xs font-medium text-[#666666] mb-1">
+                自訂交付 / 寄送說明
+              </label>
               <input
                 type="text"
                 value={shippingNote}
                 onChange={(e) => setShippingNote(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5]"
-                placeholder="例：7-11 店到店運費 60 元，或雙北面交"
               />
             </div>
             <button
@@ -481,7 +559,6 @@ export default function SellerCenterPage() {
         </div>
       )}
 
-      {/* 分頁 3：實名會員資料 */}
       {activeTab === 'profile' && (
         <div className="bg-white border border-[#E6E3DC] rounded-sm p-6 max-w-2xl">
           <h2 className="text-sm font-bold text-[#222222] mb-4">個人實名認證資料維護</h2>
@@ -498,7 +575,9 @@ export default function SellerCenterPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-[#666666] mb-1">身分證字號 / 居留證號 *</label>
+                <label className="block text-xs font-medium text-[#666666] mb-1">
+                  身分證字號 / 居留證號 *
+                </label>
                 <input
                   type="text"
                   required
@@ -530,7 +609,9 @@ export default function SellerCenterPage() {
               </div>
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#666666] mb-1">現居 / 戶籍聯絡地址 *</label>
+              <label className="block text-xs font-medium text-[#666666] mb-1">
+                現居 / 戶籍聯絡地址 *
+              </label>
               <input
                 type="text"
                 required
@@ -550,73 +631,247 @@ export default function SellerCenterPage() {
         </div>
       )}
 
-      {/* 編輯商品彈窗 */}
+      {/* 完整升級版：編輯商品彈窗（含 5 張照片上傳、分類物況、單一/多規格切換） */}
       {editingProduct && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E6E3DC] w-full max-w-lg rounded-sm p-6 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-sm font-bold text-[#222222] mb-4">編輯商品：{editingProduct.title}</h3>
-            <form onSubmit={handleSaveProductEdit} className="space-y-4 text-xs">
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white border border-[#E6E3DC] w-full max-w-2xl rounded-sm p-6 max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center pb-3 border-b border-[#E6E3DC] mb-4">
+              <h3 className="text-base font-bold text-[#222222]">
+                編輯商品：{editingProduct.title}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="text-[#666666] hover:text-[#222222]"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProductEdit} className="space-y-5 text-xs">
+              <div className="p-4 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm">
+                <ImageUploader5
+                  images={editingProduct.images || []}
+                  onChange={(newImgs) =>
+                    setEditingProduct({ ...editingProduct, images: newImgs })
+                  }
+                  maxImages={5}
+                />
+              </div>
+
               <div>
-                <label className="block text-[#666666] mb-1">商品名稱</label>
+                <label className="block font-medium text-[#222222] mb-1">商品名稱 *</label>
                 <input
                   type="text"
                   required
                   value={editingProduct.title}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, title: e.target.value })}
+                  onChange={(e) =>
+                    setEditingProduct({ ...editingProduct, title: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-[#666666] mb-1">售價 (NT$)</label>
+                  <label className="block font-medium text-[#222222] mb-1">商品分類</label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
+                  >
+                    {PRODUCT_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-[#222222] mb-1">新舊物況</label>
+                  <select
+                    value={editCondition}
+                    onChange={(e) => setEditCondition(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
+                  >
+                    {PRODUCT_CONDITIONS.map((cond) => (
+                      <option key={cond} value={cond}>
+                        {cond}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-[#222222] mb-1">品牌 / 來源</label>
                   <input
-                    type="number"
-                    required
-                    value={editingProduct.price}
-                    onChange={(e) =>
-                      setEditingProduct({ ...editingProduct, price: Number(e.target.value) })
-                    }
+                    type="text"
+                    value={editBrand}
+                    onChange={(e) => setEditBrand(e.target.value)}
                     className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
                   />
                 </div>
-                <div>
-                  <label className="block text-[#666666] mb-1">狀態</label>
-                  <select
-                    value={editingProduct.status}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, status: e.target.value })}
-                    className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
-                  >
-                    <option value="published">上架中 (published)</option>
-                    <option value="sold_out">已售完 (sold_out)</option>
-                    <option value="archived">已下架 (archived)</option>
-                  </select>
+              </div>
+
+              <div className="border-t border-[#E6E3DC] pt-4 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-[#222222]">價格與規格模式</span>
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditHasMultiSpec(false)}
+                      className={`px-2.5 py-1 rounded-sm ${
+                        !editHasMultiSpec
+                          ? 'bg-[#7F0019] text-white'
+                          : 'border border-[#E6E3DC] text-[#666666]'
+                      }`}
+                    >
+                      單一商品
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditHasMultiSpec(true)}
+                      className={`px-2.5 py-1 rounded-sm ${
+                        editHasMultiSpec
+                          ? 'bg-[#7F0019] text-white'
+                          : 'border border-[#E6E3DC] text-[#666666]'
+                      }`}
+                    >
+                      多規格款式
+                    </button>
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[#666666] mb-1">主售價 (NT$)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editingProduct.price}
+                      onChange={(e) =>
+                        setEditingProduct({
+                          ...editingProduct,
+                          price: Number(e.target.value),
+                        })
+                      }
+                      className="w-full px-3 py-2 font-bold border border-[#E6E3DC] bg-[#FAF9F5]"
+                    />
+                  </div>
+                  {!editHasMultiSpec && (
+                    <div>
+                      <label className="block text-[#666666] mb-1">可售庫存數量</label>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        value={editSingleStock}
+                        onChange={(e) => setEditSingleStock(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-[#666666] mb-1">狀態</label>
+                    <select
+                      value={editingProduct.status}
+                      onChange={(e) =>
+                        setEditingProduct({ ...editingProduct, status: e.target.value })
+                      }
+                      className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
+                    >
+                      <option value="published">上架中 (published)</option>
+                      <option value="sold_out">已售完 (sold_out)</option>
+                      <option value="archived">已下架 (archived)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {editHasMultiSpec && (
+                  <div className="p-3 bg-[#FAF9F5] border border-[#E6E3DC] space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium">多規格款式設定</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingProduct({
+                            ...editingProduct,
+                            product_variants: [
+                              ...(editingProduct.product_variants || []),
+                              { name: '新款項', price: editingProduct.price, stock: 1 },
+                            ],
+                          })
+                        }
+                        className="text-[#7F0019] hover:underline"
+                      >
+                        + 新增款式
+                      </button>
+                    </div>
+                    {(editingProduct.product_variants || []).map((v, idx) => (
+                      <div key={idx} className="grid grid-cols-12 gap-2 items-center">
+                        <input
+                          type="text"
+                          value={v.name === '__SINGLE__' ? '款式一' : v.name}
+                          onChange={(e) => {
+                            const next = [...editingProduct.product_variants];
+                            next[idx] = { ...next[idx], name: e.target.value };
+                            setEditingProduct({ ...editingProduct, product_variants: next });
+                          }}
+                          className="col-span-5 px-2 py-1 border border-[#E6E3DC] bg-white"
+                          placeholder="款式名稱"
+                        />
+                        <input
+                          type="number"
+                          value={v.price}
+                          onChange={(e) => {
+                            const next = [...editingProduct.product_variants];
+                            next[idx] = { ...next[idx], price: Number(e.target.value) };
+                            setEditingProduct({ ...editingProduct, product_variants: next });
+                          }}
+                          className="col-span-3 px-2 py-1 border border-[#E6E3DC] bg-white"
+                          placeholder="售價"
+                        />
+                        <input
+                          type="number"
+                          value={v.stock}
+                          onChange={(e) => {
+                            const next = [...editingProduct.product_variants];
+                            next[idx] = { ...next[idx], stock: Number(e.target.value) };
+                            setEditingProduct({ ...editingProduct, product_variants: next });
+                          }}
+                          className="col-span-3 px-2 py-1 border border-[#E6E3DC] bg-white"
+                          placeholder="庫存"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editingProduct.product_variants.length <= 1) return;
+                            setEditingProduct({
+                              ...editingProduct,
+                              product_variants: editingProduct.product_variants.filter(
+                                (_, i) => i !== idx
+                              ),
+                            });
+                          }}
+                          className="col-span-1 text-center text-[#7F0019]"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
               <div>
-                <label className="block text-[#666666] mb-1">圖片網址</label>
-                <input
-                  type="text"
-                  value={editingProduct.images?.[0] || ''}
-                  onChange={(e) =>
-                    setEditingProduct({
-                      ...editingProduct,
-                      images: e.target.value ? [e.target.value] : [],
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
-                />
-              </div>
-              <div>
-                <label className="block text-[#666666] mb-1">商品描述</label>
+                <label className="block font-medium text-[#222222] mb-1">詳細商品描述</label>
                 <textarea
-                  rows={3}
-                  value={editingProduct.description}
-                  onChange={(e) =>
-                    setEditingProduct({ ...editingProduct, description: e.target.value })
-                  }
+                  rows={4}
+                  value={editCleanDesc}
+                  onChange={(e) => setEditCleanDesc(e.target.value)}
                   className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
                 />
               </div>
+
               <div className="flex justify-end space-x-2 pt-3 border-t border-[#E6E3DC]">
                 <button
                   type="button"
@@ -625,8 +880,12 @@ export default function SellerCenterPage() {
                 >
                   取消
                 </button>
-                <button type="submit" className="px-4 py-2 bg-[#7F0019] text-white">
-                  儲存變更
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-5 py-2 bg-[#7F0019] text-white font-medium"
+                >
+                  {saving ? '儲存同步中...' : '儲存變更並同步前台'}
                 </button>
               </div>
             </form>

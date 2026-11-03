@@ -1,14 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServiceSupabase } from '@/lib/supabase';
+import { getServiceSupabase, SUPABASE_URL } from '@/lib/supabase';
 
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'Opel@6404200116';
+const BUCKET_NAME = 'product-images';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action, payload } = body;
     const adminSb = getServiceSupabase();
+
+    // 0. 圖片上傳至 Supabase Storage (自動初始化公開儲存桶)
+    if (action === 'upload_image') {
+      const { base64, ext = 'jpg', contentType = 'image/jpeg' } = payload;
+      if (!base64) {
+        return NextResponse.json({ ok: false, error: '未收到圖片資料' }, { status: 400 });
+      }
+
+      // 確保 product-images bucket 存在且為公開
+      const { data: buckets } = await adminSb.storage.listBuckets();
+      const exists = (buckets || []).some((b) => b.name === BUCKET_NAME);
+      if (!exists) {
+        await adminSb.storage.createBucket(BUCKET_NAME, {
+          public: true,
+          fileSizeLimit: 5242880,
+        });
+      }
+
+      const fileBuffer = Buffer.from(base64, 'base64');
+      const fileName = `items/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+      const { error: uploadErr } = await adminSb.storage
+        .from(BUCKET_NAME)
+        .upload(fileName, fileBuffer, {
+          contentType,
+          upsert: true,
+        });
+
+      if (uploadErr) {
+        return NextResponse.json({ ok: false, error: uploadErr.message }, { status: 400 });
+      }
+
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET_NAME}/${fileName}`;
+      return NextResponse.json({ ok: true, url: publicUrl });
+    }
 
     // 1. 管理員帳號密碼驗證
     if (action === 'admin_login') {
@@ -18,7 +54,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: '管理員帳號或密碼錯誤' }, { status: 401 });
     }
 
-    // 2. 前台/後台 實名制會員註冊與新增 (免收驗證信直接開通)
+    // 2. 前台/後台 實名制會員註冊與新增
     if (action === 'register_user' || action === 'admin_create_user') {
       const {
         email,
@@ -61,7 +97,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, user: data.user });
     }
 
-    // 3. 更新會員實名資料 (支援後台編輯所有欄位或前台會員自行更新)
+    // 3. 更新會員實名資料
     if (action === 'update_user') {
       const {
         user_id,
@@ -109,7 +145,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 5. 取得全站同步資料 (供管理員後台與賣家中心使用)
+    // 5. 取得全站同步資料
     if (action === 'fetch_all_data') {
       const { data: usersData, error: usersErr } = await adminSb.auth.admin.listUsers({
         page: 1,
@@ -157,7 +193,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 6. 建立或更新賣場 (Store Upsert)
+    // 6. 建立或更新賣場
     if (action === 'save_store') {
       const {
         id,
@@ -213,7 +249,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 8. 新增或更新商品與規格 (Product & Variants Upsert)
+    // 8. 新增或更新商品與規格 (強制處理單一規格與多規格同步)
     if (action === 'save_product') {
       const {
         id,
@@ -224,14 +260,19 @@ export async function POST(req: NextRequest) {
         images,
         status = 'published',
         variants = [],
+        has_multi_spec = false,
+        single_stock = 1,
       } = payload;
+
+      const numericPrice = Number(price) || 0;
+      const safeImages = Array.isArray(images) ? images.slice(0, 5) : [];
 
       const productRecord = {
         store_id,
         title,
         description: description || '',
-        price: Number(price) || 0,
-        images: Array.isArray(images) ? images : [],
+        price: numericPrice,
+        images: safeImages,
         status,
         updated_at: new Date().toISOString(),
       };
@@ -252,22 +293,41 @@ export async function POST(req: NextRequest) {
         productId = data.id;
       }
 
-      const validVariants =
-        variants.length > 0
-          ? variants.map((v: { name: string; price: number; stock: number }) => ({
-              product_id: productId,
-              name: v.name || '預設規格',
-              price: Number(v.price) >= 0 ? Number(v.price) : Number(price) || 0,
-              stock: Number(v.stock) >= 0 ? Number(v.stock) : 1,
-            }))
-          : [
-              {
+      // 若為單一規格商品，寫入 __SINGLE__ 標記並強制將價格同步為 numericPrice
+      let validVariants;
+      if (!has_multi_spec) {
+        const fallbackStock =
+          Number(single_stock) >= 0
+            ? Number(single_stock)
+            : variants?.[0]?.stock !== undefined
+            ? Number(variants[0].stock)
+            : 1;
+        validVariants = [
+          {
+            product_id: productId,
+            name: '__SINGLE__',
+            price: numericPrice,
+            stock: fallbackStock,
+          },
+        ];
+      } else {
+        validVariants =
+          variants.length > 0
+            ? variants.map((v: { name: string; price: number; stock: number }) => ({
                 product_id: productId,
-                name: '標準規格',
-                price: Number(price) || 0,
-                stock: 1,
-              },
-            ];
+                name: v.name && v.name !== '__SINGLE__' ? v.name : '款式一',
+                price: Number(v.price) >= 0 ? Number(v.price) : numericPrice,
+                stock: Number(v.stock) >= 0 ? Number(v.stock) : 1,
+              }))
+            : [
+                {
+                  product_id: productId,
+                  name: '__SINGLE__',
+                  price: numericPrice,
+                  stock: 1,
+                },
+              ];
+      }
 
       await adminSb.from('product_variants').insert(validVariants);
 
