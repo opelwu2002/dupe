@@ -38,14 +38,14 @@ export default function Navbar() {
           <span className="hidden sm:inline-block text-[#666666]">極簡非對稱 P2P 拍賣看板</span>
           <Link
             className="text-[#666666] hover:text-[#222222] transition-colors"
-            href="/admin/login"
+            href="/admin"
           >
             管理後台
           </Link>
           {user ? (
             <div className="flex items-center space-x-3">
               <Link className="px-3 py-1.5 border border-[#E6E3DC] bg-[#FAF9F5] hover:bg-white text-[#222222] rounded-sm transition-colors" href="/dashboard/store">
-                賣場設定
+                賣家中心
               </Link>
               <Link className="px-3 py-1.5 bg-[#7F0019] hover:bg-[#660014] text-white rounded-sm font-medium transition-colors" href="/dashboard/products/new">
                 刊登商品

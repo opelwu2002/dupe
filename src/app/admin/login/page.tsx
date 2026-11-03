@@ -17,23 +17,21 @@ export default function AdminLoginPage() {
     setErrorMsg(null);
 
     try {
-      const res = await fetch('/api/admin', {
+      const res = await fetch('/api/system', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'admin_login',
-          username: username.trim(),
-          password,
+          payload: { username: username.trim(), password },
         }),
       });
 
       const data = await res.json();
-      if (!res.ok || data.error) {
+      if (!res.ok || !data.ok) {
         setErrorMsg(data.error || '管理員帳號或密碼驗證失敗');
       } else {
-        // 同步寫入 SessionStorage 作為雙重驗證憑證（搭配伺服器端 HttpOnly Cookie）
+        sessionStorage.setItem('dupe_admin_session', 'verified');
         sessionStorage.setItem('dupe_admin_token', data.token);
-        sessionStorage.setItem('dupe_admin_user', username.trim());
         router.push('/admin');
         router.refresh();
       }
@@ -76,7 +74,7 @@ export default function AdminLoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white focus:outline-none focus:border-[#7F0019]"
-              placeholder="請輸入管理員帳號"
+              placeholder="admin"
             />
           </div>
 
@@ -90,7 +88,7 @@ export default function AdminLoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white focus:outline-none focus:border-[#7F0019]"
-              placeholder="請輸入管理員密碼"
+              placeholder="••••••••••••"
             />
           </div>
 
@@ -108,10 +106,6 @@ export default function AdminLoginPage() {
             ← 返回前台商品看板
           </Link>
         </div>
-      </div>
-
-      <div className="mt-6 p-4 bg-white border border-[#E6E3DC] rounded-sm text-[11px] text-[#666666] leading-relaxed">
-        免責聲明：本平台（Dupe 嘟屁）僅提供去中心化商品資訊刊登與 P2P 媒合展示看板，不介入買賣雙方實質交易、金流收付與商品交付流程，亦不承擔任何買賣履約保證與物之瑕疵擔保責任。
       </div>
     </main>
   );
