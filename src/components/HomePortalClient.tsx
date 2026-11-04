@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import {
   decodeDescriptionAndMeta,
@@ -10,6 +11,12 @@ import {
   FULFILLMENT_TYPE_OPTIONS,
   PRODUCT_CATEGORIES,
 } from '@/lib/productMeta';
+import {
+  PortalConfig,
+  DEFAULT_PORTAL_CONFIG,
+  evaluateScheduleState,
+  QuickFilterMode,
+} from '@/lib/portalConfig';
 
 export interface PortalProductItem {
   id: string;
@@ -45,9 +52,9 @@ export interface PortalStoreItem {
 interface HomePortalClientProps {
   initialProducts: PortalProductItem[];
   initialStores: PortalStoreItem[];
+  initialPortalConfig?: PortalConfig;
 }
 
-// 內建質感策展範例商品（當樓層商品不足時自動補齊版面豐富度，亦可一鍵切換僅看真實商品）
 const SHOWCASE_DEMO_PRODUCTS: PortalProductItem[] = [
   {
     id: 'demo-proxy-jjk',
@@ -226,56 +233,6 @@ const SHOWCASE_DEMO_PRODUCTS: PortalProductItem[] = [
   },
 ];
 
-// 首屏中間主視覺 6 大策展輪播（對標樂天中間大圖 + 底部頁籤）
-const HERO_SLIDES = [
-  {
-    tabTitle: '零抽成・純粹直購',
-    badge: 'DUPE P2P 拍賣革命',
-    title: '0% 平台成交抽成・讓利回歸買賣雙方',
-    subtitle: '告別高昂平台手續費與強制廣告綁架，賣家直開實價、買家直接聯繫點交。',
-    image: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&q=80',
-    ctaText: '瀏覽現貨直購品',
-    filterMode: 'in_stock',
-  },
-  {
-    tabTitle: '日本代購・未買到退費',
-    badge: 'PRE-ORDER & PROXY SHIELD',
-    title: '預購／日本連線代購・沒買到 100% 退費取消保障',
-    subtitle: '透明標示收單截止日、預計抵台時間與「現場缺貨／官方砍單無條件取消退費」承諾。',
-    image: 'https://images.unsplash.com/photo-1503899036084-c55cdd92da26?w=1200&q=80',
-    ctaText: '探索預購與代購專區',
-    filterMode: 'preorder_proxy',
-  },
-  {
-    tabTitle: '企業採購・三聯發票',
-    badge: 'B2B & TAX TRANSPARENCY',
-    title: '全站含稅／未稅價格透明・支援二聯與三聯式發票',
-    subtitle: '無論個人自用（二聯式）或公司行號報帳扣抵（三聯式 8 碼統編），一鍵產生採購洽詢單。',
-    image: 'https://images.unsplash.com/photo-1497215728101-856f4ea42174?w=1200&q=80',
-    ctaText: '篩選可開發票商品',
-    filterMode: 'invoice_only',
-  },
-  {
-    tabTitle: '實名認證・防幽靈機制',
-    badge: 'REAL-NAME VERIFIED',
-    title: '全站買賣家實名制登錄・杜絕幽靈詐騙帳號',
-    subtitle: '強制驗證真實姓名、身分證字號、行動電話與聯絡地址，安心約定超商或捷運面交。',
-    image: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=1200&q=80',
-    ctaText: '前往實名註冊／賣家中心',
-    filterMode: 'all',
-  },
-  {
-    tabTitle: '器物雅石・二手良物',
-    badge: 'VINTAGE & STONE COLLECTION',
-    title: '惜物循環・二手精品、3C筆電與天然雅石收藏',
-    subtitle: '支援 5 張實拍細節照片上傳，清楚揭露物況等級與當面驗貨地點。',
-    image: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=1200&q=80',
-    ctaText: '查看全站精選好物',
-    filterMode: 'all',
-  },
-];
-
-// 左側分類選單附屬快速熱搜詞（對標樂天左側分類欄）
 const CATEGORY_SUBTAGS: Record<string, string[]> = {
   '精品／服飾鞋包': ['托特包', '真皮肩背包', '日本女裝'],
   '日貨／動漫周邊／展覽代購': ['咒術迴戰', '趴娃/立牌', '日本連線'],
@@ -290,17 +247,22 @@ const CATEGORY_SUBTAGS: Record<string, string[]> = {
 export default function HomePortalClient({
   initialProducts,
   initialStores,
+  initialPortalConfig,
 }: HomePortalClientProps) {
+  const router = useRouter();
+  const [portalConfig, setPortalConfig] = useState<PortalConfig>(
+    initialPortalConfig || DEFAULT_PORTAL_CONFIG
+  );
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('全部商品');
-  const [quickFilter, setQuickFilter] = useState<
-    'all' | 'in_stock' | 'preorder_proxy' | 'invoice_only'
-  >('all');
+  const [quickFilter, setQuickFilter] = useState<QuickFilterMode>('all');
   const [sortBy, setSortBy] = useState<'newest' | 'price_asc' | 'price_desc'>('newest');
-  const [includeDemoShowcase, setIncludeDemoShowcase] = useState(true);
+  const [includeDemoShowcase, setIncludeDemoShowcase] = useState<boolean>(
+    initialPortalConfig?.defaultShowDemoProducts ?? true
+  );
   const [activeSlide, setActiveSlide] = useState(0);
 
-  // 右欄會員登入狀態（對標樂天首頁右欄個人資訊卡）
   const [userInfo, setUserInfo] = useState<{
     name: string;
     email: string;
@@ -309,7 +271,44 @@ export default function HomePortalClient({
     storeName: string;
   } | null>(null);
 
+  // 依據後台設定與當前台灣時間，過濾出正在生效中的輪播活動與樓層
+  const activeHeroSlides = useMemo(() => {
+    const valid = (portalConfig.heroCampaigns || []).filter(
+      (c) => evaluateScheduleState(c).isVisibleOnFrontend
+    );
+    return valid.length > 0 ? valid : DEFAULT_PORTAL_CONFIG.heroCampaigns.slice(0, 1);
+  }, [portalConfig.heroCampaigns]);
+
+  const activeFloors = useMemo(() => {
+    return (portalConfig.floors || []).filter(
+      (fl) => evaluateScheduleState(fl).isVisibleOnFrontend
+    );
+  }, [portalConfig.floors]);
+
+  const featuredStore = useMemo(() => {
+    if (portalConfig.featuredStoreId) {
+      const found = initialStores.find((s) => s.id === portalConfig.featuredStoreId);
+      if (found) return found;
+    }
+    return initialStores[0] || null;
+  }, [portalConfig.featuredStoreId, initialStores]);
+
   useEffect(() => {
+    // 確保前端載入時同步最新 CMS 設定
+    fetch('/api/system', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get_portal_config' }),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.ok && res.portalConfig) {
+          setPortalConfig(res.portalConfig);
+          setIncludeDemoShowcase(res.portalConfig.defaultShowDemoProducts ?? true);
+        }
+      })
+      .catch(() => {});
+
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (user) {
         const meta = user.user_metadata || {};
@@ -327,22 +326,22 @@ export default function HomePortalClient({
     });
   }, [initialStores]);
 
-  // 輪播自動切換
   useEffect(() => {
+    if (activeSlide >= activeHeroSlides.length) {
+      setActiveSlide(0);
+    }
     const timer = setInterval(() => {
-      setActiveSlide((prev) => (prev + 1) % HERO_SLIDES.length);
+      setActiveSlide((prev) => (prev + 1) % activeHeroSlides.length);
     }, 6000);
     return () => clearInterval(timer);
-  }, []);
+  }, [activeHeroSlides.length, activeSlide]);
 
-  // 合併真實資料庫商品與質感策展商品（真實商品永遠優先置頂）
   const allMergedProducts = useMemo(() => {
     const realItems = initialProducts.map((p) => ({ ...p, isDemo: false }));
     if (!includeDemoShowcase) return realItems;
     return [...realItems, ...SHOWCASE_DEMO_PRODUCTS];
   }, [initialProducts, includeDemoShowcase]);
 
-  // 經過搜尋、分類、快速篩選與排序後的商品列表
   const filteredProducts = useMemo(() => {
     return allMergedProducts
       .filter((item) => {
@@ -350,18 +349,13 @@ export default function HomePortalClient({
           item.description,
           item.product_variants
         );
-        // 1. 分類篩選
         if (selectedCategory !== '全部商品' && meta.category !== selectedCategory) {
           return false;
         }
-        // 2. 快速條件篩選
         if (quickFilter === 'in_stock' && meta.fulfillmentType !== 'in_stock') {
           return false;
         }
-        if (
-          quickFilter === 'preorder_proxy' &&
-          meta.fulfillmentType === 'in_stock'
-        ) {
+        if (quickFilter === 'preorder_proxy' && meta.fulfillmentType === 'in_stock') {
           return false;
         }
         if (
@@ -371,29 +365,27 @@ export default function HomePortalClient({
         ) {
           return false;
         }
-        // 3. 關鍵字搜尋
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
-          const matchTitle = item.title.toLowerCase().includes(q);
-          const matchDesc = cleanDescription.toLowerCase().includes(q);
-          const matchStore = (item.stores?.name || '').toLowerCase().includes(q);
-          const matchCat = meta.category.toLowerCase().includes(q);
-          const matchBrand = (meta.brand || '').toLowerCase().includes(q);
-          return matchTitle || matchDesc || matchStore || matchCat || matchBrand;
+          return (
+            item.title.toLowerCase().includes(q) ||
+            cleanDescription.toLowerCase().includes(q) ||
+            (item.stores?.name || '').toLowerCase().includes(q) ||
+            meta.category.toLowerCase().includes(q) ||
+            (meta.brand || '').toLowerCase().includes(q)
+          );
         }
         return true;
       })
       .sort((a, b) => {
         if (sortBy === 'price_asc') return a.price - b.price;
         if (sortBy === 'price_desc') return b.price - a.price;
-        // newest: 真實商品永遠排在最前面
         if (!a.isDemo && b.isDemo) return -1;
         if (a.isDemo && !b.isDemo) return 1;
         return 0;
       });
   }, [allMergedProducts, selectedCategory, quickFilter, searchQuery, sortBy]);
 
-  // 統計數據
   const stats = useMemo(() => {
     let invoiceCount = 0;
     let preorderCount = 0;
@@ -415,7 +407,7 @@ export default function HomePortalClient({
     };
   }, [allMergedProducts, initialProducts.length, initialStores.length]);
 
-  const scrollToExplorer = (category?: string, filter?: typeof quickFilter, keyword?: string) => {
+  const scrollToExplorer = (category?: string, filter?: QuickFilterMode, keyword?: string) => {
     if (category !== undefined) setSelectedCategory(category);
     if (filter !== undefined) setQuickFilter(filter);
     if (keyword !== undefined) setSearchQuery(keyword);
@@ -423,7 +415,6 @@ export default function HomePortalClient({
     if (el) el.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // 渲染單張標準 MUJI 商品卡
   const renderProductCard = (item: PortalProductItem) => {
     const { meta } = decodeDescriptionAndMeta(item.description, item.product_variants);
     const taxInfo = calculateTaxBreakdown(item.price, meta.taxMode);
@@ -433,9 +424,9 @@ export default function HomePortalClient({
 
     return (
       <Link
-        className="group bg-white border border-[#E6E3DC] rounded-sm overflow-hidden hover:border-[#7F0019] transition-all flex flex-col justify-between"
-        href={cardHref}
         key={item.id}
+        href={cardHref}
+        className="group bg-white border border-[#E6E3DC] rounded-sm overflow-hidden hover:border-[#7F0019] transition-all flex flex-col justify-between"
       >
         <div>
           <div className="relative aspect-square bg-[#FAF9F5] overflow-hidden flex items-center justify-center border-b border-[#E6E3DC]">
@@ -449,7 +440,6 @@ export default function HomePortalClient({
               <span className="text-xs text-[#666666]">無商品圖片</span>
             )}
 
-            {/* 左上角狀態標籤群 */}
             <div className="absolute top-2 left-2 flex flex-wrap gap-1 pr-2">
               {!item.isDemo ? (
                 <span className="px-2 py-0.5 text-[10px] font-bold bg-[#7F0019] text-white">
@@ -462,9 +452,7 @@ export default function HomePortalClient({
               )}
               <span
                 className={`px-2 py-0.5 text-[10px] font-bold ${
-                  isPreorderOrProxy
-                    ? 'bg-amber-800 text-white'
-                    : 'bg-[#222222] text-white'
+                  isPreorderOrProxy ? 'bg-amber-800 text-white' : 'bg-[#222222] text-white'
                 }`}
               >
                 {fulfillObj?.badge || '現貨'}
@@ -481,7 +469,6 @@ export default function HomePortalClient({
               )}
             </div>
 
-            {/* 預購/代購沒買到退費保障底部浮條 */}
             {isPreorderOrProxy && (
               <div className="absolute bottom-0 inset-x-0 bg-[#7F0019]/90 text-white text-[10px] px-2.5 py-1 flex justify-between items-center">
                 <span>⏳ {meta.estimatedArrival || '較長備貨'}</span>
@@ -524,52 +511,13 @@ export default function HomePortalClient({
     );
   };
 
-  // 樓層配置資料（對標樂天 1F、2F、3F 樓層結構）
-  const floors = [
-    {
-      floorNum: '1F',
-      title: '精品服飾・生活良物館',
-      subtitle: '專櫃精品包袋、無印風衣著與居家溫潤器物',
-      accentColor: '#7F0019',
-      hotTags: ['手提托特包', 'A4通勤包', '無染色帆布', '美濃燒陶器', '二聯/三聯發票', '雙北面交'],
-      bannerTitle: '質樸衣著與日常器物',
-      bannerDesc: '精選海內外專櫃包袋與手作生活器皿，全館透明標示含稅與未稅價格。',
-      bannerImg: 'https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=800&q=80',
-      bottomPills: ['托特包', '真皮肩背包', '白瓷茶具', '亞麻收納籃', '木質立架', '專櫃正品'],
-      matchCategories: ['精品／服飾鞋包', '居家生活／無印良物', '其他精選好物'],
-    },
-    {
-      floorNum: '2F',
-      title: '日本連線・動漫周邊・預購代購館',
-      subtitle: '東京展場連線、限定立牌趴娃、較長備貨預購（沒買到保證 100% 全額退費取消）',
-      accentColor: '#222222',
-      hotTags: ['咒術迴戰', '五條悟/夏油傑', '原宿限定代購', '免預付買到再付', '沒買到全額退', '同人誌畫集'],
-      bannerTitle: '日本連線代購・零風險保障',
-      bannerDesc: '支援「先登記買到再付」與「沒買到 24 小時全額無息退費」，徹底解決預購與代購砍單糾紛。',
-      bannerImg: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=800&q=80',
-      bottomPills: ['日本展覽代購', '壓克力立牌', '趴娃/指娃', '痛包配件', '預購免訂金', '官方周邊'],
-      matchCategories: ['日貨／動漫周邊／展覽代購', '書籍／文具小物', '美妝保養／個人清潔'],
-    },
-    {
-      floorNum: '3F',
-      title: '3C數位・原石雅石・收藏孤品館',
-      subtitle: '日本製輕薄商務筆電、UMPC、花蓮天然玉髓雅石與企業統編報帳設備',
-      accentColor: '#4A463F',
-      hotTags: ['商務筆電', '三聯式統編報帳', '台灣豐田玉', '立霧溪白玉髓', '當面驗機點交', '收藏老件'],
-      bannerTitle: '高單價 3C 與天然雅石收藏',
-      bannerDesc: '支援企業採購開立三聯式統一發票報帳，高單價品項可約定捷運站當面點交驗貨。',
-      bannerImg: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=800&q=80',
-      bottomPills: ['日本製筆電', 'UMPC掌機', '花蓮白玉髓', '蛇紋石/藍石英', '檜木擺件', '可開三聯發票'],
-      matchCategories: ['3C數位／筆電家電', '古董／原石雅石收藏'],
-    },
-  ];
+  const currentSlide = activeHeroSlides[activeSlide] || activeHeroSlides[0];
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-10">
-      {/* 1. 頂部搜尋列 ＋ 熱門關鍵字 ＋ 防詐騙提醒條（對標樂天頂部配置） */}
+      {/* 1. 頂部搜尋列 ＋ 熱門關鍵字 ＋ 防詐騙提醒條 */}
       <section className="bg-white border border-[#E6E3DC] rounded-sm p-4 shadow-sm">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
-          {/* 搜尋框 */}
           <div className="lg:col-span-8 space-y-2">
             <div className="flex">
               <select
@@ -600,26 +548,19 @@ export default function HomePortalClient({
               </button>
             </div>
 
-            {/* 熱門關鍵字列 */}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#666666]">
               <span className="font-bold text-[#222222]">熱門搜尋：</span>
-              {[
-                { label: '手提購物袋', kw: '手提' },
-                { label: '可開三聯發票', filter: 'invoice_only' as const },
-                { label: '日本連線代購', filter: 'preorder_proxy' as const },
-                { label: '現貨秒出', filter: 'in_stock' as const },
-                { label: '日貨小判', kw: '日貨小判' },
-                { label: '商務筆電', kw: '筆電' },
-                { label: '天然原石', kw: '原石' },
-              ].map((tag, i) => (
+              {(portalConfig.hotKeywords || []).map((tag) => (
                 <button
-                  key={i}
+                  key={tag.id}
                   type="button"
                   onClick={() => {
-                    if (tag.filter) {
-                      scrollToExplorer('全部商品', tag.filter, '');
-                    } else if (tag.kw) {
-                      scrollToExplorer('全部商品', 'all', tag.kw);
+                    if (tag.filterMode) {
+                      scrollToExplorer('全部商品', tag.filterMode, '');
+                    } else if (tag.keyword) {
+                      scrollToExplorer('全部商品', 'all', tag.keyword);
+                    } else {
+                      scrollToExplorer('全部商品', 'all', tag.label);
                     }
                   }}
                   className="hover:text-[#7F0019] hover:underline"
@@ -630,26 +571,22 @@ export default function HomePortalClient({
             </div>
           </div>
 
-          {/* 右側防詐騙警語盒（對標樂天「提高警覺防詐騙」） */}
           <div className="lg:col-span-4">
             <div className="p-3 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm flex items-start space-x-2.5">
               <span className="px-1.5 py-0.5 text-[10px] font-bold bg-[#7F0019] text-white rounded-sm flex-shrink-0 mt-0.5">
                 防詐提醒
               </span>
               <div className="text-[11px] text-[#222222] leading-relaxed">
-                <div className="font-bold">提高警覺防詐騙・安心實名點交</div>
-                <p className="text-[#666666] text-[10px] mt-0.5">
-                  本平台採實名制登錄，絕不會以電話通知分期設定錯誤或要求操作 ATM。
-                </p>
+                <div className="font-bold">{portalConfig.antiFraudTitle}</div>
+                <p className="text-[#666666] text-[10px] mt-0.5">{portalConfig.antiFraudText}</p>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* 2. 首屏三欄式黃金佈局（左：8大分類選單 ／ 中：6主題輪播看板 ／ 右：會員實名與賣家中心卡） */}
+      {/* 2. 首屏三欄式黃金佈局（中間輪播與活動排程完全由後台 CMS 控制） */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        {/* 左欄：商品分類導覽（對標樂天左側「商品分類」） */}
         <div className="lg:col-span-3 bg-white border border-[#E6E3DC] rounded-sm flex flex-col justify-between overflow-hidden">
           <div>
             <div className="px-4 py-2.5 bg-[#7F0019] text-white text-xs font-bold tracking-wider flex items-center justify-between">
@@ -694,55 +631,69 @@ export default function HomePortalClient({
           </div>
         </div>
 
-        {/* 中欄：主題策展輪播 ＋ 底部頁籤切換（對標樂天中央主視覺） */}
+        {/* 中欄：後台動態主視覺輪播 */}
         <div className="lg:col-span-6 bg-white border border-[#E6E3DC] rounded-sm flex flex-col justify-between overflow-hidden">
           <div className="relative flex-1 min-h-[260px] sm:min-h-[310px] bg-[#222222] overflow-hidden flex items-end">
-            <img
-              src={HERO_SLIDES[activeSlide].image}
-              alt={HERO_SLIDES[activeSlide].title}
-              className="absolute inset-0 w-full h-full object-cover opacity-55 transition-all duration-500"
-            />
-            <div className="relative z-10 p-6 sm:p-8 text-white space-y-2.5 bg-gradient-to-t from-black/85 via-black/45 to-transparent w-full">
-              <span className="inline-block px-2.5 py-0.5 text-[10px] font-bold tracking-widest bg-[#7F0019] text-white rounded-sm">
-                {HERO_SLIDES[activeSlide].badge}
-              </span>
-              <h2 className="text-lg sm:text-xl font-bold leading-snug">
-                {HERO_SLIDES[activeSlide].title}
-              </h2>
-              <p className="text-xs text-gray-200 leading-relaxed max-w-lg">
-                {HERO_SLIDES[activeSlide].subtitle}
-              </p>
-              <div className="pt-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    scrollToExplorer(
-                      '全部商品',
-                      HERO_SLIDES[activeSlide].filterMode as typeof quickFilter
-                    )
-                  }
-                  className="px-4 py-2 bg-white text-[#222222] hover:bg-[#FAF9F5] text-xs font-bold rounded-sm transition-colors"
-                >
-                  {HERO_SLIDES[activeSlide].ctaText} →
-                </button>
-              </div>
-            </div>
+            {currentSlide && (
+              <>
+                <img
+                  src={currentSlide.image}
+                  alt={currentSlide.title}
+                  className="absolute inset-0 w-full h-full object-cover opacity-55 transition-all duration-500"
+                />
+                <div className="relative z-10 p-6 sm:p-8 text-white space-y-2.5 bg-gradient-to-t from-black/85 via-black/45 to-transparent w-full">
+                  <div className="flex items-center space-x-2">
+                    <span className="inline-block px-2.5 py-0.5 text-[10px] font-bold tracking-widest bg-[#7F0019] text-white rounded-sm">
+                      {currentSlide.badge}
+                    </span>
+                    {currentSlide.scheduleEnabled && currentSlide.endAt && (
+                      <span className="text-[10px] px-2 py-0.5 bg-black/60 border border-white/30 text-amber-200 rounded-sm">
+                        活動檔期至 {currentSlide.endAt.replace('T', ' ')}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-lg sm:text-xl font-bold leading-snug">
+                    {currentSlide.title}
+                  </h2>
+                  <p className="text-xs text-gray-200 leading-relaxed max-w-lg">
+                    {currentSlide.subtitle}
+                  </p>
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (currentSlide.customUrl && currentSlide.customUrl.trim()) {
+                          router.push(currentSlide.customUrl.trim());
+                        } else {
+                          scrollToExplorer('全部商品', currentSlide.filterMode);
+                        }
+                      }}
+                      className="px-4 py-2 bg-white text-[#222222] hover:bg-[#FAF9F5] text-xs font-bold rounded-sm transition-colors"
+                    >
+                      {currentSlide.ctaText || '立即查看'} →
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* 底部 5 格主題切換列（對標樂天輪播下方分頁） */}
-          <div className="grid grid-cols-5 divide-x divide-[#E6E3DC] border-t border-[#E6E3DC] bg-[#FAF9F5]">
-            {HERO_SLIDES.map((slide, idx) => {
+          <div
+            className="grid divide-x divide-[#E6E3DC] border-t border-[#E6E3DC] bg-[#FAF9F5]"
+            style={{
+              gridTemplateColumns: `repeat(${Math.max(1, activeHeroSlides.length)}, minmax(0, 1fr))`,
+            }}
+          >
+            {activeHeroSlides.map((slide, idx) => {
               const active = activeSlide === idx;
               return (
                 <button
-                  key={idx}
+                  key={slide.id}
                   type="button"
                   onMouseEnter={() => setActiveSlide(idx)}
                   onClick={() => setActiveSlide(idx)}
-                  className={`py-2.5 px-1 text-center text-[11px] transition-colors truncate ${
-                    active
-                      ? 'bg-[#7F0019] text-white font-bold'
-                      : 'text-[#222222] hover:bg-white'
+                  className={`py-2.5 px-1.5 text-center text-[11px] transition-colors truncate ${
+                    active ? 'bg-[#7F0019] text-white font-bold' : 'text-[#222222] hover:bg-white'
                   }`}
                 >
                   {slide.tabTitle}
@@ -752,7 +703,7 @@ export default function HomePortalClient({
           </div>
         </div>
 
-        {/* 右欄：實名會員狀態與賣家快捷中心（對標樂天右欄會員卡片） */}
+        {/* 右欄：實名會員狀態與賣家快捷中心 */}
         <div className="lg:col-span-3 bg-white border border-[#E6E3DC] rounded-sm p-4 flex flex-col justify-between space-y-4">
           <div className="space-y-3">
             <div className="flex items-center space-x-3 pb-3 border-b border-[#E6E3DC]">
@@ -769,7 +720,6 @@ export default function HomePortalClient({
               </div>
             </div>
 
-            {/* 平台即時透明數據盒 */}
             <div className="grid grid-cols-2 gap-2 text-center bg-[#FAF9F5] p-2.5 border border-[#E6E3DC] rounded-sm">
               <div>
                 <div className="text-[10px] text-[#666666]">全站展售品項</div>
@@ -789,32 +739,30 @@ export default function HomePortalClient({
               </div>
             </div>
 
-            {/* 賣家與買家快捷行動按鈕 */}
             <div className="space-y-2 pt-1">
               <Link
-                className="block w-full py-2 bg-[#7F0019] hover:bg-[#660014] text-white text-center text-xs font-bold rounded-sm transition-colors"
                 href="/dashboard/products/new"
+                className="block w-full py-2 bg-[#7F0019] hover:bg-[#660014] text-white text-center text-xs font-bold rounded-sm transition-colors"
               >
                 + 免費刊登商品（支援5圖上傳）
               </Link>
               <div className="grid grid-cols-2 gap-2">
                 <Link
-                  className="py-1.5 border border-[#E6E3DC] bg-[#FAF9F5] hover:bg-white text-[#222222] text-center text-xs font-medium rounded-sm"
                   href="/dashboard/store"
+                  className="py-1.5 border border-[#E6E3DC] bg-[#FAF9F5] hover:bg-white text-[#222222] text-center text-xs font-medium rounded-sm"
                 >
                   賣家管理中心
                 </Link>
                 <Link
-                  className="py-1.5 border border-[#E6E3DC] bg-[#FAF9F5] hover:bg-white text-[#222222] text-center text-xs font-medium rounded-sm"
                   href="/admin"
+                  className="py-1.5 border border-[#E6E3DC] bg-[#FAF9F5] hover:bg-white text-[#222222] text-center text-xs font-medium rounded-sm"
                 >
-                  營運管理後台
+                  首頁與營運後台
                 </Link>
               </div>
             </div>
           </div>
 
-          {/* 賣家實名保障小卡 */}
           <div className="p-2.5 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm text-[11px] space-y-1">
             <div className="font-bold text-[#222222]">★ 嘟屁三大交易準則</div>
             <div className="text-[#666666]">1. 含稅／未稅價格與發票主動揭露</div>
@@ -824,7 +772,7 @@ export default function HomePortalClient({
         </div>
       </section>
 
-      {/* 3. 四大安心機制快速篩選橫幅（取代樂天信用卡/點數橫幅，轉化為有價值的導購篩選器） */}
+      {/* 3. 四大安心機制快速篩選橫幅 */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           {
@@ -874,7 +822,7 @@ export default function HomePortalClient({
         })}
       </section>
 
-      {/* 4. 注目實名店家推薦（對標樂天「購物網注目店家」） */}
+      {/* 4. 注目實名店家推薦 */}
       <section className="bg-white border border-[#E6E3DC] rounded-sm p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E6E3DC] pb-3">
           <div className="flex items-center space-x-2">
@@ -884,16 +832,12 @@ export default function HomePortalClient({
               （已完成實名身分證號與聯絡地址登錄之精選店家）
             </span>
           </div>
-          <Link
-            className="text-xs text-[#7F0019] font-medium hover:underline"
-            href="/dashboard/store"
-          >
+          <Link href="/dashboard/store" className="text-xs text-[#7F0019] font-medium hover:underline">
             進駐開立我的零抽成賣場 →
           </Link>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-          {/* 左側：主打實名賣場名片（優先顯示使用者真實建立的賣場如「日貨小判」） */}
           <div className="lg:col-span-4 p-5 bg-[#FAF9F5] border border-[#E6E3DC] rounded-sm space-y-3">
             <div className="flex items-center justify-between">
               <span className="px-2 py-0.5 text-[10px] font-bold bg-[#7F0019] text-white rounded-sm">
@@ -902,47 +846,44 @@ export default function HomePortalClient({
               <span className="text-[11px] text-[#666666]">0% 抽成直營</span>
             </div>
             <h3 className="text-lg font-bold text-[#222222]">
-              {initialStores[0]?.name || '日貨小判・實名精選賣場'}
+              {featuredStore?.name || '日貨小判・實名精選賣場'}
             </h3>
             <p className="text-xs text-[#666666] leading-relaxed">
-              {initialStores[0]?.description ||
+              {featuredStore?.description ||
                 '專營日本直送精品包袋、限定周邊與生活器物，全館透明標示含稅與未稅價，支援開立二聯／三聯式發票。'}
             </p>
             <div className="pt-2 border-t border-[#E6E3DC] space-y-1 text-[11px] text-[#222222]">
               <div>
                 <span className="text-[#666666]">面交自取：</span>
-                {initialStores[0]?.meetup_location || '台北市松山區小巨蛋3號出口'}
+                {featuredStore?.meetup_location || '台北市松山區小巨蛋3號出口'}
               </div>
               <div>
                 <span className="text-[#666666]">交付方式：</span>
-                {initialStores[0]?.custom_shipping_note || '宅配 或 便利商店店到店'}
+                {featuredStore?.custom_shipping_note || '宅配 或 便利商店店到店'}
               </div>
             </div>
             <button
               type="button"
-              onClick={() =>
-                scrollToExplorer('全部商品', 'all', initialStores[0]?.name || '')
-              }
+              onClick={() => scrollToExplorer('全部商品', 'all', featuredStore?.name || '')}
               className="w-full py-2 bg-[#222222] hover:bg-[#7F0019] text-white text-xs font-medium rounded-sm transition-colors"
             >
               查看此賣場所有商品
             </button>
           </div>
 
-          {/* 右側：注目店家精選 3 品 */}
           <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
             {allMergedProducts.slice(0, 3).map((item) => renderProductCard(item))}
           </div>
         </div>
       </section>
 
-      {/* 5. 百貨樓層式主題導覽（1F、2F、3F，對標樂天樓層區塊：左「大家都在找」＋中主題視覺＋右商品格＋底標籤） */}
+      {/* 5. 百貨樓層式主題導覽（完全由後台樓層管理與排程控制） */}
       <div className="space-y-8">
-        {floors.map((fl) => {
+        {activeFloors.map((fl) => {
           const floorItems = allMergedProducts
             .filter((p) => {
               const { meta } = decodeDescriptionAndMeta(p.description, p.product_variants);
-              return fl.matchCategories.includes(meta.category);
+              return (fl.matchCategories || []).includes(meta.category);
             })
             .slice(0, 3);
 
@@ -951,15 +892,14 @@ export default function HomePortalClient({
 
           return (
             <section
-              key={fl.floorNum}
+              key={fl.id}
               className="bg-white border border-[#E6E3DC] rounded-sm overflow-hidden shadow-sm"
             >
-              {/* 樓層標題列 */}
               <div className="px-5 py-3.5 border-b border-[#E6E3DC] flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-[#FAF9F5]/60">
                 <div className="flex items-baseline space-x-2.5">
                   <span
                     className="px-2 py-0.5 text-xs font-bold text-white rounded-sm"
-                    style={{ backgroundColor: fl.accentColor }}
+                    style={{ backgroundColor: fl.accentColor || '#7F0019' }}
                   >
                     {fl.floorNum}
                   </span>
@@ -968,26 +908,24 @@ export default function HomePortalClient({
                 </div>
                 <button
                   type="button"
-                  onClick={() => scrollToExplorer(fl.matchCategories[0], 'all')}
+                  onClick={() => scrollToExplorer(fl.matchCategories?.[0] || '全部商品', 'all')}
                   className="text-xs text-[#7F0019] font-medium hover:underline"
                 >
                   看更多本層商品 →
                 </button>
               </div>
 
-              {/* 樓層主體：左「大家都在找」＋ 中主題卡 ＋ 右 3 品項 */}
               <div className="grid grid-cols-1 lg:grid-cols-12">
-                {/* 左側：大家都在找（對標樂天樓層左側熱門詞框） */}
                 <div
                   className="lg:col-span-2 p-4 text-white flex flex-col justify-between"
-                  style={{ backgroundColor: fl.accentColor }}
+                  style={{ backgroundColor: fl.accentColor || '#7F0019' }}
                 >
                   <div>
                     <div className="text-xs font-bold tracking-wider pb-2 mb-3 border-b border-white/20">
                       大家都在找
                     </div>
                     <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
-                      {fl.hotTags.map((t, idx) => (
+                      {(fl.hotTags || []).map((t, idx) => (
                         <button
                           key={idx}
                           type="button"
@@ -1004,7 +942,6 @@ export default function HomePortalClient({
                   </div>
                 </div>
 
-                {/* 中間：樓層主題視覺卡 */}
                 <div className="lg:col-span-3 relative min-h-[220px] bg-[#222222] flex items-end overflow-hidden border-b lg:border-b-0 lg:border-r border-[#E6E3DC]">
                   <img
                     src={fl.bannerImg}
@@ -1020,16 +957,14 @@ export default function HomePortalClient({
                   </div>
                 </div>
 
-                {/* 右側：樓層商品卡片區 */}
                 <div className="lg:col-span-7 p-4 grid grid-cols-1 sm:grid-cols-3 gap-4 bg-[#FAF9F5]/30">
                   {displayFloorItems.map((item) => renderProductCard(item))}
                 </div>
               </div>
 
-              {/* 樓層底部快速分類膠囊列（對標樂天樓層底部按鈕列） */}
               <div className="px-4 py-2.5 bg-[#FAF9F5] border-t border-[#E6E3DC] flex flex-wrap items-center gap-2">
                 <span className="text-[11px] font-bold text-[#666666] mr-1">本層快篩：</span>
-                {fl.bottomPills.map((pill, i) => (
+                {(fl.bottomPills || []).map((pill, i) => (
                   <button
                     key={i}
                     type="button"
@@ -1045,16 +980,14 @@ export default function HomePortalClient({
         })}
       </div>
 
-      {/* 6. 猜你喜歡・全站即時尋寶區（對標樂天「猜你喜歡」＋完整篩選器） */}
+      {/* 6. 猜你喜歡・全站即時尋寶區 */}
       <section id="dupe-product-explorer" className="pt-4 space-y-5">
         <div className="bg-white border border-[#E6E3DC] rounded-sm p-5 space-y-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-[#E6E3DC] pb-4">
             <div>
               <div className="flex items-center space-x-2">
                 <span className="w-1.5 h-5 bg-[#7F0019] inline-block" />
-                <h2 className="text-lg font-bold text-[#222222]">
-                  猜你喜歡・全站精選刊登看板
-                </h2>
+                <h2 className="text-lg font-bold text-[#222222]">猜你喜歡・全站精選刊登看板</h2>
               </div>
               <p className="text-xs text-[#666666] mt-1">
                 透明標示現貨／預購代購等待期、沒買到 100% 退費承諾與含稅／未稅發票資訊
@@ -1072,15 +1005,14 @@ export default function HomePortalClient({
                 <span>併同顯示平台策展範例（豐富樓層視覺）</span>
               </label>
               <Link
-                className="px-4 py-1.5 bg-[#7F0019] hover:bg-[#660014] text-white text-xs font-bold rounded-sm"
                 href="/dashboard/products/new"
+                className="px-4 py-1.5 bg-[#7F0019] hover:bg-[#660014] text-white text-xs font-bold rounded-sm"
               >
                 + 我要刊登商品
               </Link>
             </div>
           </div>
 
-          {/* 篩選與排序控制列 */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
             <div className="flex flex-wrap gap-1.5">
               {[
@@ -1092,7 +1024,7 @@ export default function HomePortalClient({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setQuickFilter(tab.id as typeof quickFilter)}
+                  onClick={() => setQuickFilter(tab.id as QuickFilterMode)}
                   className={`px-3 py-1.5 border rounded-sm transition-colors ${
                     quickFilter === tab.id
                       ? 'bg-[#7F0019] border-[#7F0019] text-white font-bold'
@@ -1127,12 +1059,9 @@ export default function HomePortalClient({
           </div>
         </div>
 
-        {/* 商品網格（對標樂天多欄卡片流） */}
         {filteredProducts.length === 0 ? (
           <div className="bg-white border border-[#E6E3DC] rounded-sm p-12 text-center space-y-3">
-            <p className="text-sm text-[#222222] font-medium">
-              查無符合目前篩選條件之商品
-            </p>
+            <p className="text-sm text-[#222222] font-medium">查無符合目前篩選條件之商品</p>
             <button
               type="button"
               onClick={() => {

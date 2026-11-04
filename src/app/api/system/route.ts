@@ -1,9 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase, SUPABASE_URL } from '@/lib/supabase';
+import { DEFAULT_PORTAL_CONFIG, PortalConfig } from '@/lib/portalConfig';
 
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'Opel@6404200116';
 const BUCKET_NAME = 'product-images';
+const CMS_CONFIG_PATH = 'cms/portal_config.json';
+
+async function ensureBucketExists(adminSb: ReturnType<typeof getServiceSupabase>) {
+  const { data: buckets } = await adminSb.storage.listBuckets();
+  const exists = (buckets || []).some((b) => b.name === BUCKET_NAME);
+  if (!exists) {
+    await adminSb.storage.createBucket(BUCKET_NAME, {
+      public: true,
+      fileSizeLimit: 5242880,
+    });
+  }
+}
+
+async function loadPortalConfigFromStorage(
+  adminSb: ReturnType<typeof getServiceSupabase>
+): Promise<PortalConfig> {
+  try {
+    const { data, error } = await adminSb.storage.from(BUCKET_NAME).download(CMS_CONFIG_PATH);
+    if (error || !data) return DEFAULT_PORTAL_CONFIG;
+    const text = await data.text();
+    const parsed = JSON.parse(text);
+    return {
+      ...DEFAULT_PORTAL_CONFIG,
+      ...parsed,
+      heroCampaigns: Array.isArray(parsed.heroCampaigns)
+        ? parsed.heroCampaigns
+        : DEFAULT_PORTAL_CONFIG.heroCampaigns,
+      floors: Array.isArray(parsed.floors) ? parsed.floors : DEFAULT_PORTAL_CONFIG.floors,
+      hotKeywords: Array.isArray(parsed.hotKeywords)
+        ? parsed.hotKeywords
+        : DEFAULT_PORTAL_CONFIG.hotKeywords,
+    };
+  } catch {
+    return DEFAULT_PORTAL_CONFIG;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,23 +48,14 @@ export async function POST(req: NextRequest) {
     const { action, payload } = body;
     const adminSb = getServiceSupabase();
 
-    // 0. 圖片上傳至 Supabase Storage (自動初始化公開儲存桶)
+    // 0. 圖片上傳至 Supabase Storage
     if (action === 'upload_image') {
       const { base64, ext = 'jpg', contentType = 'image/jpeg' } = payload;
       if (!base64) {
         return NextResponse.json({ ok: false, error: '未收到圖片資料' }, { status: 400 });
       }
 
-      // 確保 product-images bucket 存在且為公開
-      const { data: buckets } = await adminSb.storage.listBuckets();
-      const exists = (buckets || []).some((b) => b.name === BUCKET_NAME);
-      if (!exists) {
-        await adminSb.storage.createBucket(BUCKET_NAME, {
-          public: true,
-          fileSizeLimit: 5242880,
-        });
-      }
-
+      await ensureBucketExists(adminSb);
       const fileBuffer = Buffer.from(base64, 'base64');
       const fileName = `items/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
@@ -44,6 +72,34 @@ export async function POST(req: NextRequest) {
 
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET_NAME}/${fileName}`;
       return NextResponse.json({ ok: true, url: publicUrl });
+    }
+
+    // 0-B. 讀取首頁與活動排程設定 (CMS)
+    if (action === 'get_portal_config') {
+      const config = await loadPortalConfigFromStorage(adminSb);
+      return NextResponse.json({ ok: true, portalConfig: config });
+    }
+
+    // 0-C. 儲存首頁與活動排程設定 (CMS)
+    if (action === 'save_portal_config') {
+      await ensureBucketExists(adminSb);
+      const updatedConfig: PortalConfig = {
+        ...DEFAULT_PORTAL_CONFIG,
+        ...payload,
+        updatedAt: new Date().toISOString(),
+      };
+      const jsonBuffer = Buffer.from(JSON.stringify(updatedConfig, null, 2), 'utf-8');
+      const { error: saveErr } = await adminSb.storage
+        .from(BUCKET_NAME)
+        .upload(CMS_CONFIG_PATH, jsonBuffer, {
+          contentType: 'application/json',
+          upsert: true,
+        });
+
+      if (saveErr) {
+        return NextResponse.json({ ok: false, error: saveErr.message }, { status: 400 });
+      }
+      return NextResponse.json({ ok: true, portalConfig: updatedConfig });
     }
 
     // 1. 管理員帳號密碼驗證
@@ -145,7 +201,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 5. 取得全站同步資料
+    // 5. 取得全站同步資料（含首頁 CMS 設定）
     if (action === 'fetch_all_data') {
       const { data: usersData, error: usersErr } = await adminSb.auth.admin.listUsers({
         page: 1,
@@ -185,11 +241,14 @@ export async function POST(req: NextRequest) {
         `)
         .order('created_at', { ascending: false });
 
+      const portalConfig = await loadPortalConfigFromStorage(adminSb);
+
       return NextResponse.json({
         ok: true,
         members,
         stores: stores || [],
         products: products || [],
+        portalConfig,
       });
     }
 
@@ -249,7 +308,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    // 8. 新增或更新商品與規格 (強制處理單一規格與多規格同步)
+    // 8. 新增或更新商品與規格
     if (action === 'save_product') {
       const {
         id,
@@ -293,7 +352,6 @@ export async function POST(req: NextRequest) {
         productId = data.id;
       }
 
-      // 若為單一規格商品，寫入 __SINGLE__ 標記並強制將價格同步為 numericPrice
       let validVariants;
       if (!has_multi_spec) {
         const fallbackStock =
