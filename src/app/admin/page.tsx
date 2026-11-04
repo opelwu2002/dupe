@@ -903,18 +903,6 @@ export default function AdminDashboardPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('batch')}
-              className={`w-full text-left px-3 py-2.5 rounded-sm font-medium flex justify-between ${
-                activeTab === 'batch'
-                  ? 'bg-[#7F0019] text-white'
-                  : 'text-[#222222] hover:bg-[#FAF9F5]'
-              }`}
-            >
-              <span>4. 蝦皮商品批次搬家</span>
-              <span>工具</span>
-            </button>
-            <button
-              type="button"
               onClick={() => setActiveTab('police')}
               className={`w-full text-left px-3 py-2.5 rounded-sm font-medium flex justify-between ${
                 activeTab === 'police'
@@ -922,7 +910,7 @@ export default function AdminDashboardPage() {
                   : 'text-[#222222] hover:bg-[#FAF9F5]'
               }`}
             >
-              <span>5. 警政與司法調閱中心</span>
+              <span>4. 警政與司法調閱中心</span>
               <span>匯出</span>
             </button>
             <button
@@ -934,7 +922,7 @@ export default function AdminDashboardPage() {
                   : 'text-[#222222] hover:bg-[#FAF9F5]'
               }`}
             >
-              <span>6. 與我們聯絡與留言管理</span>
+              <span>5. 與我們聯絡與留言管理</span>
               <span>{feedbackTickets.length}</span>
             </button>
           </nav>
@@ -1905,49 +1893,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* 4. 蝦皮批次搬家工具 */}
-        {activeTab === 'batch' && (
-          <div className="bg-white border border-[#E6E3DC] p-6 rounded-sm space-y-4 max-w-3xl">
-            <h3 className="text-base font-bold text-[#222222]">蝦皮賣場商品・一鍵批次快速搬家工具</h3>
-            <p className="text-xs text-[#666666]">
-              每行一筆商品，格式：
-              <code className="text-[#7F0019]">商品名稱, 售價, 庫存, 圖片網址, 商品說明</code>
-            </p>
-            <div>
-              <label className="block text-xs font-medium text-[#222222] mb-1">選擇匯入目標賣場</label>
-              <select
-                value={batchStoreId}
-                onChange={(e) => setBatchStoreId(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-[#E6E3DC] bg-[#FAF9F5]"
-              >
-                <option value="">-- 請選擇賣場 --</option>
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[#222222] mb-1">批次商品清單</label>
-              <textarea
-                rows={6}
-                value={batchText}
-                onChange={(e) => setBatchText(e.target.value)}
-                className="w-full p-3 text-xs font-mono border border-[#E6E3DC] bg-[#FAF9F5]"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleBatchImport}
-              className="px-6 py-2.5 bg-[#7F0019] text-white text-xs font-medium rounded-sm"
-            >
-              開始批次匯入並上架至前台
-            </button>
-          </div>
-        )}
-
-        {/* 5. 警政與司法調閱中心 */}
+        {/* 4. 警政與司法調閱中心 */}
         {activeTab === 'police' && (
           <div className="bg-white border border-[#E6E3DC] p-6 rounded-sm space-y-4">
             <div className="flex justify-between items-center">
@@ -1976,7 +1922,7 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
-        {/* 6. 與我們聯絡與留言管理 */}
+        {/* 5. 與我們聯絡與留言管理 */}
         {activeTab === 'contact' && (
           <AdminContactSection
             feedbackTickets={feedbackTickets}

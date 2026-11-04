@@ -76,20 +76,23 @@ export interface AdminEditableProduct {
 }
 
 interface AdminProductModalProps {
-  open: boolean;
-  editingProduct: AdminEditableProduct | null;
+  open?: boolean;
+  editingProduct?: AdminEditableProduct | null;
+  product?: AdminEditableProduct | null;
   stores: StoreOption[];
   onClose: () => void;
   onSaved: (msg: string) => void;
 }
 
 export default function AdminProductModal({
-  open,
-  editingProduct,
+  open = true,
+  editingProduct: propEditingProduct,
+  product: propProduct,
   stores,
   onClose,
   onSaved,
 }: AdminProductModalProps) {
+  const editingProduct = propEditingProduct !== undefined ? propEditingProduct : propProduct || null;
   const [saving, setSaving] = useState(false);
   const [storeId, setStoreId] = useState('');
   const [title, setTitle] = useState('');

@@ -48,7 +48,8 @@ export default function AuthPage() {
           setLoading(false);
           return;
         }
-        router.push('/dashboard/store');
+        // 重要優化：會員登入後直接進入平台首頁（可立即作為買家選購商品，或點擊頂部「賣家中心」管理賣場）
+        router.push('/');
         router.refresh();
       } else {
         if (!validateTwId(idCardNumber)) {
@@ -81,14 +82,13 @@ export default function AuthPage() {
           return;
         }
 
-        // 註冊成功後自動登入並導向賣家中心
         const { error: loginErr } = await supabase.auth.signInWithPassword({
           email: email.trim(),
           password,
         });
 
         if (!loginErr) {
-          router.push('/dashboard/store');
+          router.push('/');
           router.refresh();
         } else {
           setSuccessMsg('實名註冊已完成！請直接點擊下方登入。');
@@ -106,10 +106,10 @@ export default function AuthPage() {
     <main className="max-w-lg mx-auto px-4 py-12">
       <div className="bg-white border border-[#E6E3DC] rounded-sm p-8 shadow-sm">
         <h1 className="text-xl font-bold text-center tracking-tight text-[#222222] mb-1">
-          {isLogin ? '實名會員登入' : '註冊實名賣家 / 買家帳號'}
+          {isLogin ? '實名會員登入（買家／賣家通用）' : '註冊實名會員帳號（可購物亦可免費開賣場）'}
         </h1>
         <p className="text-xs text-center text-[#666666] mb-6">
-          嘟屁 DUPE・零抽成・防幽靈實名認證拍賣平台
+          嘟屁 DUPE・登入後直達拍賣首頁・一組實名帳號同時享有買家採購保障與賣家零抽成開館權限
         </p>
 
         {errorMsg && (
@@ -157,7 +157,7 @@ export default function AuthPage() {
           {!isLogin && (
             <div className="pt-3 border-t border-[#E6E3DC] space-y-4">
               <p className="text-[11px] font-medium text-[#7F0019]">
-                以下實名欄位為防止幽靈帳號與交易安全必填，平台嚴格加密保存，僅供依法調閱：
+                以下實名欄位為防止幽靈帳號與交易安全必填，無論作為買家購物或作為賣家開館皆受保障：
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -170,7 +170,7 @@ export default function AuthPage() {
                     required
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white focus:outline-none focus:border-[#7F0019]"
+                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white"
                     placeholder="請填寫真實姓名"
                   />
                 </div>
@@ -184,7 +184,7 @@ export default function AuthPage() {
                     maxLength={10}
                     value={idCardNumber}
                     onChange={(e) => setIdCardNumber(e.target.value.toUpperCase())}
-                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white focus:outline-none focus:border-[#7F0019] uppercase"
+                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white uppercase"
                     placeholder="例：A123456789"
                   />
                 </div>
@@ -200,7 +200,7 @@ export default function AuthPage() {
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white focus:outline-none focus:border-[#7F0019]"
+                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white"
                     placeholder="例：0912345678"
                   />
                 </div>
@@ -212,8 +212,8 @@ export default function AuthPage() {
                     type="text"
                     value={lineId}
                     onChange={(e) => setLineId(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white focus:outline-none focus:border-[#7F0019]"
-                    placeholder="選填，方便買家聯繫"
+                    className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white"
+                    placeholder="選填，方便買賣聯繫"
                   />
                 </div>
               </div>
@@ -227,13 +227,9 @@ export default function AuthPage() {
                   required
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white focus:outline-none focus:border-[#7F0019]"
+                  className="w-full px-3 py-2 text-sm border border-[#E6E3DC] rounded-sm bg-[#FAF9F5] focus:bg-white"
                   placeholder="請填寫完整縣市、鄉鎮市區與門牌地址"
                 />
-              </div>
-
-              <div className="p-3 bg-[#FAF9F5] border border-[#E6E3DC] text-[11px] text-[#666666] leading-relaxed">
-                依據法規與拍賣資訊安全指引，本平台採實名資料註冊；若有涉及詐欺或交易糾紛，實名資訊將依法配合司法與警政單位調查調閱。
               </div>
             </div>
           )}
@@ -243,7 +239,7 @@ export default function AuthPage() {
             disabled={loading}
             className="w-full py-2.5 bg-[#7F0019] hover:bg-[#660014] text-white text-xs font-medium tracking-wider rounded-sm transition-colors disabled:opacity-50"
           >
-            {loading ? '系統處理中...' : isLogin ? '立即登入' : '完成實名驗證並註冊'}
+            {loading ? '系統處理中...' : isLogin ? '登入並前往拍賣首頁' : '完成實名註冊並進入首頁'}
           </button>
         </form>
 

@@ -62,6 +62,8 @@ export default function ProductDetailPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [buyerName, setBuyerName] = useState('');
+  const [buyerPhone, setBuyerPhone] = useState('');
 
   useEffect(() => {
     async function loadProduct() {
@@ -110,6 +112,13 @@ export default function ProductDetailPage() {
       setLoading(false);
     }
     loadProduct();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        const meta = user.user_metadata || {};
+        if (meta.full_name) setBuyerName(meta.full_name);
+        if (meta.phone) setBuyerPhone(meta.phone);
+      }
+    });
   }, [productId]);
 
   const copyToClipboard = (text: string, type: string) => {
@@ -208,6 +217,12 @@ export default function ProductDetailPage() {
         lines.push(`・預計到貨期：${meta.estimatedArrival}（買家已知悉並同意等待期）`);
       }
       lines.push(`・未買到／缺貨取消約定：${meta.shortagePolicy}`);
+    }
+
+    if (buyerName || buyerPhone) {
+      lines.push(
+        `・買家實名聯絡：${buyerName || '實名會員'}${buyerPhone ? `（電話：${buyerPhone}）` : ''}`
+      );
     }
 
     lines.push(`請問目前可受理登記／購買嗎？謝謝！`);
