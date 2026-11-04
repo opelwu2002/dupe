@@ -41,6 +41,43 @@ export interface HotKeywordItem {
   filterMode?: QuickFilterMode;
 }
 
+export interface ContactFaqItem {
+  id: string;
+  question: string;
+  answer: string;
+}
+
+export interface ContactPageConfig {
+  companyName: string;
+  contactEmail: string;
+  serviceHours: string;
+  headquartersNote: string;
+  pageTitle: string;
+  pageSubtitle: string;
+  announcement: string;
+  faqs: ContactFaqItem[];
+}
+
+export interface FeedbackTicket {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  category:
+    | '一般平台諮詢'
+    | '賣場與商品刊登問題'
+    | '預購代購與退費申訴'
+    | '企業採購與合作提案'
+    | '檢舉違規與警政協查';
+  subject: string;
+  content: string;
+  isPublic: boolean;
+  status: 'pending' | 'replied';
+  adminReply?: string;
+  repliedAt?: string;
+  createdAt: string;
+}
+
 export interface PortalConfig {
   updatedAt: string;
   antiFraudTitle: string;
@@ -50,6 +87,7 @@ export interface PortalConfig {
   hotKeywords: HotKeywordItem[];
   heroCampaigns: HeroCampaignItem[];
   floors: FloorConfigItem[];
+  contactPage?: ContactPageConfig;
 }
 
 export type ScheduleState = 'active' | 'paused' | 'scheduled' | 'expired';
@@ -225,4 +263,80 @@ export const DEFAULT_PORTAL_CONFIG: PortalConfig = {
       endAt: '',
     },
   ],
+  contactPage: {
+    companyName: '宇沛實業股份有限公司(UPAY Medical Technology Corporation) Estd. 2024',
+    contactEmail: 'opelwu2002@gmail.com',
+    serviceHours: '週一至週五 09:30 - 18:30（例假日及國定假日歡迎線上留言或來信）',
+    headquartersNote: '台灣實名制去中心化 P2P 拍賣資訊看板・企業級資安與法遵維運團隊',
+    pageTitle: '與我們聯絡・平台意見反映與客服留言中心',
+    pageSubtitle:
+      '無論是賣場開立諮詢、企業大宗採購、二聯／三聯發票規範、預購／代購沒買到退費保障申訴，或跨界商務合作，歡迎直接來信或於下方留言板提交意見，管理團隊將親自回覆。',
+    announcement:
+      '防詐騙重要提醒：嘟屁（Dupe）與宇沛實業股份有限公司絕不會以電話或簡訊要求您操作 ATM 解除分期付款或索取銀行帳戶密碼。若有疑問請直接於本頁留言查證。',
+    faqs: [
+      {
+        id: 'faq-1',
+        question: 'Q1. 在「嘟屁（Dupe）」刊登商品與成交需要支付平台手續費嗎？',
+        answer:
+          '本平台主打「0% 平台成交抽成」，讓利完全回歸買賣雙方。賣家只需完成防幽靈實名制登錄，即可免費開立專屬賣場、上傳 5 張實拍照片並設定多規格含稅／未稅價格。',
+      },
+      {
+        id: 'faq-2',
+        question: 'Q2. 購買「預購商品」或「日本連線代購」若遇到現場缺貨、官方砍單沒買到怎麼辦？',
+        answer:
+          '本平台強制要求所有預購／代購商品於上架時明確公開「缺貨／未買到之退費取消保障」（如：確認未買到後 24 小時內 100% 全額無息退費，或採先登記買到再付款），買家複製採購單時亦會同步載明該保障條款作為履約依據。',
+      },
+      {
+        id: 'faq-3',
+        question: 'Q3. 公司行號採購如何索取「三聯式統一發票」報帳？',
+        answer:
+          '凡商品標示「可開立三聯式發票」之賣場，買家可於商品詳情頁直接切換「三聯式統一發票（公司報帳）」並輸入企業抬頭與 8 碼統一編號，系統將自動試算 5% 營業稅明細並生成正式採購洽詢單供您傳送給賣家。',
+      },
+      {
+        id: 'faq-4',
+        question: 'Q4. 若發生交易糾紛或疑似遇到詐騙，平台如何協助？',
+        answer:
+          '全站會員皆須通過實名制驗證（含真實姓名、身分證／居留證字號、電話與戶籍／現居地址）。若發生重大履約爭議或詐欺案件，請於本頁提交申訴或來信 opelwu2002@gmail.com，後台可立即配合警政與司法機關調閱完整實名清冊。',
+      },
+    ],
+  },
 };
+
+export const DEFAULT_CONTACT_PAGE_CONFIG: ContactPageConfig =
+  DEFAULT_PORTAL_CONFIG.contactPage!;
+
+export const INITIAL_FEEDBACK_TICKETS: FeedbackTicket[] = [
+  {
+    id: 'fb-demo-1',
+    name: '陳小姐（企業採購部）',
+    email: 'procurement@example-corp.com.tw',
+    phone: '02-2700-xxxx',
+    category: '企業採購與合作提案',
+    subject: '請問在平台上向賣家採購商務筆電，三聯式發票統編會直接帶入訂單嗎？',
+    content:
+      '您好，我們公司近期有採購日本輕薄商務筆電的需求，看到平台上已經有含稅價／未稅價對照，想確認輸入公司抬頭與 8 碼統編後如何提供給賣家開立發票？謝謝！',
+    isPublic: true,
+    status: 'replied',
+    adminReply:
+      '陳小姐您好，感謝您的來訊！在商品詳情頁中點選「三聯式統一發票（公司報帳）」並填入貴司「公司抬頭」與「8 碼統一編號」後，點擊下方「一鍵複製完整採購／預購單並聯繫賣家」，系統就會自動將您選購的規格、含稅／未稅金額、5% 營業稅額以及貴司統編抬頭完整打包成文字單據，您可直接貼給賣家確認並隨貨開立三聯式發票！如有大宗採購需求亦歡迎隨時來信 opelwu2002@gmail.com。',
+    repliedAt: '2026-11-03T10:30:00.000Z',
+    createdAt: '2026-11-03T09:15:00.000Z',
+  },
+  {
+    id: 'fb-demo-2',
+    name: '林先生（收藏買家）',
+    email: 'lin.collector@example.com',
+    phone: '0912-xxx-xxx',
+    category: '預購代購與退費申訴',
+    subject: '肯定平台的「日本代購沒買到 100% 退費取消機制」！',
+    content:
+      '以前在其他社群跟團日本展覽代購，最怕遇到限量立牌沒買到結果賣家拖延退費或強迫換物。看到嘟屁把「沒買到 24 小時全額無息退費」跟「先登記買到再付」直接寫進商品頁跟採購單裡，對買家真的很有保障！',
+    isPublic: true,
+    status: 'replied',
+    adminReply:
+      '非常感謝林先生的支持與肯定！宇沛實業股份有限公司致力於解決台灣拍賣與代購市場長期以來的資訊不對稱痛點，透過強制揭露「到貨時程」與「缺貨／砍單全額退費機制」，讓買賣雙方都能在最透明、安心的環境下完成每一筆交易。',
+    repliedAt: '2026-11-03T15:20:00.000Z',
+    createdAt: '2026-11-03T14:00:00.000Z',
+  },
+];
+

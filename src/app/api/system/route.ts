@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServiceSupabase, SUPABASE_URL } from '@/lib/supabase';
-import { DEFAULT_PORTAL_CONFIG, PortalConfig } from '@/lib/portalConfig';
+import {
+  DEFAULT_CONTACT_PAGE_CONFIG,
+  DEFAULT_PORTAL_CONFIG,
+  FeedbackTicket,
+  INITIAL_FEEDBACK_TICKETS,
+  PortalConfig,
+} from '@/lib/portalConfig';
 
 const ADMIN_USER = 'admin';
 const ADMIN_PASS = 'Opel@6404200116';
 const BUCKET_NAME = 'product-images';
 const CMS_CONFIG_PATH = 'cms/portal_config.json';
+const FEEDBACK_STORAGE_PATH = 'cms/feedback_tickets.json';
 
 async function ensureBucketExists(adminSb: ReturnType<typeof getServiceSupabase>) {
   const { data: buckets } = await adminSb.storage.listBuckets();
@@ -36,10 +43,45 @@ async function loadPortalConfigFromStorage(
       hotKeywords: Array.isArray(parsed.hotKeywords)
         ? parsed.hotKeywords
         : DEFAULT_PORTAL_CONFIG.hotKeywords,
+      contactPage: parsed.contactPage
+        ? {
+            ...DEFAULT_CONTACT_PAGE_CONFIG,
+            ...parsed.contactPage,
+            faqs: Array.isArray(parsed.contactPage.faqs)
+              ? parsed.contactPage.faqs
+              : DEFAULT_CONTACT_PAGE_CONFIG.faqs,
+          }
+        : DEFAULT_CONTACT_PAGE_CONFIG,
     };
   } catch {
     return DEFAULT_PORTAL_CONFIG;
   }
+}
+
+async function loadFeedbackTicketsFromStorage(
+  adminSb: ReturnType<typeof getServiceSupabase>
+): Promise<FeedbackTicket[]> {
+  try {
+    const { data, error } = await adminSb.storage.from(BUCKET_NAME).download(FEEDBACK_STORAGE_PATH);
+    if (error || !data) return INITIAL_FEEDBACK_TICKETS;
+    const text = await data.text();
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : INITIAL_FEEDBACK_TICKETS;
+  } catch {
+    return INITIAL_FEEDBACK_TICKETS;
+  }
+}
+
+async function saveFeedbackTicketsToStorage(
+  adminSb: ReturnType<typeof getServiceSupabase>,
+  tickets: FeedbackTicket[]
+) {
+  await ensureBucketExists(adminSb);
+  const jsonBuffer = Buffer.from(JSON.stringify(tickets, null, 2), 'utf-8');
+  await adminSb.storage.from(BUCKET_NAME).upload(FEEDBACK_STORAGE_PATH, jsonBuffer, {
+    contentType: 'application/json',
+    upsert: true,
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -100,6 +142,83 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: false, error: saveErr.message }, { status: 400 });
       }
       return NextResponse.json({ ok: true, portalConfig: updatedConfig });
+    }
+
+    // 0-D. 讀取「與我們聯絡」設定與公開留言板列表
+    if (action === 'get_contact_and_feedback') {
+      const config = await loadPortalConfigFromStorage(adminSb);
+      const tickets = await loadFeedbackTicketsFromStorage(adminSb);
+      return NextResponse.json({
+        ok: true,
+        contactPage: config.contactPage || DEFAULT_CONTACT_PAGE_CONFIG,
+        feedbackTickets: tickets,
+      });
+    }
+
+    // 0-E. 前台訪客／會員提交聯絡我們或意見反映留言
+    if (action === 'submit_feedback') {
+      const {
+        name,
+        email,
+        phone = '',
+        category = '一般平台諮詢',
+        subject,
+        content,
+        isPublic = true,
+      } = payload;
+
+      if (!name || !email || !subject || !content) {
+        return NextResponse.json(
+          { ok: false, error: '請填寫稱呼、聯絡信箱、主旨與反映內容' },
+          { status: 400 }
+        );
+      }
+
+      const currentTickets = await loadFeedbackTicketsFromStorage(adminSb);
+      const newTicket: FeedbackTicket = {
+        id: `fb-${Date.now()}`,
+        name: String(name).trim(),
+        email: String(email).trim(),
+        phone: String(phone || '').trim(),
+        category,
+        subject: String(subject).trim(),
+        content: String(content).trim(),
+        isPublic: Boolean(isPublic),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+
+      const nextTickets = [newTicket, ...currentTickets];
+      await saveFeedbackTicketsToStorage(adminSb, nextTickets);
+      return NextResponse.json({ ok: true, ticket: newTicket, feedbackTickets: nextTickets });
+    }
+
+    // 0-F. 後台管理員回覆或更新留言狀態
+    if (action === 'reply_feedback') {
+      const { id, adminReply, isPublic, status } = payload;
+      const currentTickets = await loadFeedbackTicketsFromStorage(adminSb);
+      const nextTickets = currentTickets.map((t) => {
+        if (t.id !== id) return t;
+        const hasReply = typeof adminReply === 'string' && adminReply.trim().length > 0;
+        return {
+          ...t,
+          adminReply: typeof adminReply === 'string' ? adminReply.trim() : t.adminReply,
+          isPublic: typeof isPublic === 'boolean' ? isPublic : t.isPublic,
+          status: status || (hasReply ? 'replied' : 'pending'),
+          repliedAt: hasReply ? new Date().toISOString() : t.repliedAt,
+        };
+      });
+      await saveFeedbackTicketsToStorage(adminSb, nextTickets);
+      return NextResponse.json({ ok: true, feedbackTickets: nextTickets });
+    }
+
+    // 0-G. 後台管理員刪除留言
+    if (action === 'delete_feedback') {
+      const { id } = payload;
+      const currentTickets = await loadFeedbackTicketsFromStorage(adminSb);
+      const nextTickets = currentTickets.filter((t) => t.id !== id);
+      await saveFeedbackTicketsToStorage(adminSb, nextTickets);
+      return NextResponse.json({ ok: true, feedbackTickets: nextTickets });
     }
 
     // 1. 管理員帳號密碼驗證
@@ -242,6 +361,7 @@ export async function POST(req: NextRequest) {
         .order('created_at', { ascending: false });
 
       const portalConfig = await loadPortalConfigFromStorage(adminSb);
+      const feedbackTickets = await loadFeedbackTicketsFromStorage(adminSb);
 
       return NextResponse.json({
         ok: true,
@@ -249,6 +369,7 @@ export async function POST(req: NextRequest) {
         stores: stores || [],
         products: products || [],
         portalConfig,
+        feedbackTickets,
       });
     }
 

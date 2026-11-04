@@ -37,6 +37,12 @@ export default function Navbar() {
         <nav className="flex items-center space-x-4 text-xs">
           <span className="hidden sm:inline-block text-[#666666]">極簡非對稱 P2P 拍賣看板</span>
           <Link
+            className="text-[#222222] hover:text-[#7F0019] font-medium transition-colors"
+            href="/contact"
+          >
+            與我們聯絡
+          </Link>
+          <Link
             className="text-[#666666] hover:text-[#222222] transition-colors"
             href="/admin"
           >

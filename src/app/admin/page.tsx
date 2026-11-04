@@ -3,6 +3,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import SingleImageUploader from '@/components/SingleImageUploader';
+import AdminProductModal from '@/components/AdminProductModal';
+import AdminContactSection from '@/components/AdminContactSection';
 import { PRODUCT_CATEGORIES } from '@/lib/productMeta';
 import {
   PortalConfig,
@@ -12,6 +14,8 @@ import {
   HotKeywordItem,
   QuickFilterMode,
   evaluateScheduleState,
+  FeedbackTicket,
+  INITIAL_FEEDBACK_TICKETS,
 } from '@/lib/portalConfig';
 
 interface Member {
@@ -73,7 +77,7 @@ export default function AdminDashboardPage() {
   const [loginError, setLoginError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<
-    'cms' | 'overview' | 'members' | 'stores' | 'products' | 'batch' | 'police'
+    'cms' | 'overview' | 'members' | 'stores' | 'products' | 'batch' | 'police' | 'contact'
   >('cms');
 
   const [cmsSubTab, setCmsSubTab] = useState<'campaigns' | 'floors' | 'settings'>('campaigns');
@@ -82,6 +86,9 @@ export default function AdminDashboardPage() {
   const [stores, setStores] = useState<Store[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [portalConfig, setPortalConfig] = useState<PortalConfig>(DEFAULT_PORTAL_CONFIG);
+  const [feedbackTickets, setFeedbackTickets] = useState<FeedbackTicket[]>(
+    INITIAL_FEEDBACK_TICKETS
+  );
   const [loading, setLoading] = useState(false);
   const [savingCms, setSavingCms] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -186,16 +193,7 @@ export default function AdminDashboardPage() {
 
   // 彈窗狀態：新增/編輯商品
   const [productModalOpen, setProductModalOpen] = useState(false);
-  const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [pForm, setPForm] = useState({
-    store_id: '',
-    title: '',
-    description: '',
-    price: 350,
-    imageUrl: '',
-    status: 'published',
-    variants: [{ name: '預設規格', price: 350, stock: 1 }] as Variant[],
-  });
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   // 批次匯入文字
   const [batchStoreId, setBatchStoreId] = useState('');
@@ -218,6 +216,9 @@ export default function AdminDashboardPage() {
         setProducts(data.products || []);
         if (data.portalConfig) {
           setPortalConfig(data.portalConfig);
+        }
+        if (data.feedbackTickets) {
+          setFeedbackTickets(data.feedbackTickets);
         }
         if (data.stores?.[0]?.id && !batchStoreId) {
           setBatchStoreId(data.stores[0].id);
@@ -641,69 +642,13 @@ export default function AdminDashboardPage() {
       alert('請先在「賣場與賣家審查」建立至少一個賣場後，再上架商品。');
       return;
     }
-    setEditingProductId(null);
-    setPForm({
-      store_id: stores[0].id,
-      title: '',
-      description: '',
-      price: 350,
-      imageUrl: '',
-      status: 'published',
-      variants: [{ name: '標準規格', price: 350, stock: 5 }],
-    });
+    setEditingProduct(null);
     setProductModalOpen(true);
   };
 
   const openEditProduct = (p: Product) => {
-    setEditingProductId(p.id);
-    setPForm({
-      store_id: p.store_id,
-      title: p.title,
-      description: p.description || '',
-      price: p.price,
-      imageUrl: (p.images || []).join('\n'),
-      status: p.status,
-      variants:
-        p.product_variants && p.product_variants.length > 0
-          ? p.product_variants
-          : [{ name: '標準規格', price: p.price, stock: 1 }],
-    });
+    setEditingProduct(p);
     setProductModalOpen(true);
-  };
-
-  const handleSaveProduct = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const images = pForm.imageUrl
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const res = await fetch('/api/system', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'save_product',
-        payload: {
-          id: editingProductId,
-          store_id: pForm.store_id,
-          title: pForm.title,
-          description: pForm.description,
-          price: pForm.price,
-          images,
-          status: pForm.status,
-          has_multi_spec: pForm.variants.length > 1,
-          variants: pForm.variants,
-        },
-      }),
-    });
-    const result = await res.json();
-    if (result.ok) {
-      showToast(editingProductId ? '商品與規格已同步更新至前台！' : '新商品已成功上架至前台！');
-      setProductModalOpen(false);
-      fetchAllData();
-    } else {
-      alert(`商品儲存失敗：${result.error}`);
-    }
   };
 
   const handleDeleteProduct = async (id: string, title: string) => {
@@ -979,6 +924,18 @@ export default function AdminDashboardPage() {
             >
               <span>5. 警政與司法調閱中心</span>
               <span>匯出</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('contact')}
+              className={`w-full text-left px-3 py-2.5 rounded-sm font-medium flex justify-between ${
+                activeTab === 'contact'
+                  ? 'bg-[#7F0019] text-white'
+                  : 'text-[#222222] hover:bg-[#FAF9F5]'
+              }`}
+            >
+              <span>6. 與我們聯絡與留言管理</span>
+              <span>{feedbackTickets.length}</span>
             </button>
           </nav>
         </div>
@@ -2018,6 +1975,19 @@ export default function AdminDashboardPage() {
             </div>
           </div>
         )}
+
+        {/* 6. 與我們聯絡與留言管理 */}
+        {activeTab === 'contact' && (
+          <AdminContactSection
+            feedbackTickets={feedbackTickets}
+            onSavePortalConfig={persistPortalConfig}
+            portalConfig={portalConfig}
+            savingCms={savingCms}
+            setFeedbackTickets={setFeedbackTickets}
+            setPortalConfig={setPortalConfig}
+            showToast={showToast}
+          />
+        )}
       </main>
 
       {/* ★ 彈窗 A：新增 / 編輯首頁輪播活動與排程 (Hero Campaign Modal) */}
@@ -2682,157 +2652,17 @@ export default function AdminDashboardPage() {
         </div>
       )}
 
-      {/* 彈窗 3：新增 / 編輯商品與規格 */}
-      {productModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E6E3DC] w-full max-w-lg rounded-sm p-6 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-base font-bold text-[#222222] mb-4">
-              {editingProductId ? '編輯商品與規格' : '後台直接上架商品'}
-            </h3>
-            <form onSubmit={handleSaveProduct} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-medium mb-1">所屬賣場 *</label>
-                <select
-                  required
-                  value={pForm.store_id}
-                  onChange={(e) => setPForm({ ...pForm, store_id: e.target.value })}
-                  className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
-                >
-                  {stores.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-medium mb-1">商品標題 *</label>
-                <input
-                  type="text"
-                  required
-                  value={pForm.title}
-                  onChange={(e) => setPForm({ ...pForm, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium mb-1">主售價 (NT$) *</label>
-                  <input
-                    type="number"
-                    required
-                    value={pForm.price}
-                    onChange={(e) => setPForm({ ...pForm, price: Number(e.target.value) })}
-                    className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
-                  />
-                </div>
-                <div>
-                  <label className="block font-medium mb-1">上架狀態</label>
-                  <select
-                    value={pForm.status}
-                    onChange={(e) => setPForm({ ...pForm, status: e.target.value })}
-                    className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
-                  >
-                    <option value="published">上架中 (published)</option>
-                    <option value="sold_out">已售完 (sold_out)</option>
-                    <option value="archived">下架隱藏 (archived)</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block font-medium mb-1">圖片網址 (每行一筆 URL)</label>
-                <textarea
-                  rows={2}
-                  value={pForm.imageUrl}
-                  onChange={(e) => setPForm({ ...pForm, imageUrl: e.target.value })}
-                  className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
-                />
-              </div>
-              <div className="border-t border-b border-[#E6E3DC] py-3 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="font-bold">規格與庫存明細</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPForm({
-                        ...pForm,
-                        variants: [
-                          ...pForm.variants,
-                          { name: '', price: pForm.price, stock: 1 },
-                        ],
-                      })
-                    }
-                    className="text-[#7F0019] hover:underline"
-                  >
-                    + 新增規格
-                  </button>
-                </div>
-                {pForm.variants.map((v, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2">
-                    <input
-                      type="text"
-                      required
-                      placeholder="規格名"
-                      value={v.name}
-                      onChange={(e) => {
-                        const next = [...pForm.variants];
-                        next[idx].name = e.target.value;
-                        setPForm({ ...pForm, variants: next });
-                      }}
-                      className="col-span-6 px-2 py-1 border border-[#E6E3DC] bg-[#FAF9F5]"
-                    />
-                    <input
-                      type="number"
-                      required
-                      placeholder="售價"
-                      value={v.price}
-                      onChange={(e) => {
-                        const next = [...pForm.variants];
-                        next[idx].price = Number(e.target.value);
-                        setPForm({ ...pForm, variants: next });
-                      }}
-                      className="col-span-3 px-2 py-1 border border-[#E6E3DC] bg-[#FAF9F5]"
-                    />
-                    <input
-                      type="number"
-                      required
-                      placeholder="庫存"
-                      value={v.stock}
-                      onChange={(e) => {
-                        const next = [...pForm.variants];
-                        next[idx].stock = Number(e.target.value);
-                        setPForm({ ...pForm, variants: next });
-                      }}
-                      className="col-span-3 px-2 py-1 border border-[#E6E3DC] bg-[#FAF9F5]"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div>
-                <label className="block font-medium mb-1">商品詳細說明</label>
-                <textarea
-                  rows={3}
-                  value={pForm.description}
-                  onChange={(e) => setPForm({ ...pForm, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-[#E6E3DC] bg-[#FAF9F5]"
-                />
-              </div>
-              <div className="flex justify-end space-x-2 pt-4 border-t border-[#E6E3DC]">
-                <button
-                  type="button"
-                  onClick={() => setProductModalOpen(false)}
-                  className="px-4 py-2 border border-[#E6E3DC]"
-                >
-                  取消
-                </button>
-                <button type="submit" className="px-5 py-2 bg-[#7F0019] text-white font-medium">
-                  儲存商品並同步前台
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* 彈窗 3：新增 / 編輯商品與規格（升級版獨立元件：含四欄明確標頭與含未稅試算） */}
+      <AdminProductModal
+        editingProduct={editingProduct}
+        onClose={() => setProductModalOpen(false)}
+        onSaved={(msg) => {
+          showToast(msg);
+          fetchAllData();
+        }}
+        open={productModalOpen}
+        stores={stores}
+      />
     </div>
   );
 }
