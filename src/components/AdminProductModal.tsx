@@ -154,7 +154,10 @@ export default function AdminProductModal({
       setSingleStock(rawVars[0]?.stock ?? meta.stock ?? 1);
       setVariants(
         !meta.hasMultiSpec || rawVars.length === 0
-          ? [{ name: '款式一', price: editingProduct.price, stock: rawVars[0]?.stock ?? 1 }]
+          ? [
+              { name: 'A4 Size', price: editingProduct.price || 30000, stock: rawVars[0]?.stock ?? 1 },
+              { name: 'B4 Size', price: 27000, stock: 1 },
+            ]
           : rawVars.map((v) => ({
               name: v.name === '__SINGLE__' ? '標準款式' : v.name,
               price: v.price,
@@ -699,18 +702,13 @@ export default function AdminProductModal({
                           </button>
                         </div>
                       </div>
-                      <div className="text-[11px] text-[#666666] pl-1 flex flex-wrap gap-3">
-                        <span>
-                          款式 #{idx + 1} 試算：含稅價{' '}
-                          <strong className="text-[#7F0019]">
-                            NT$ {rowTax.taxIncludedPrice.toLocaleString()}
-                          </strong>
+                      <div className="text-[11px] text-[#666666] pl-1 flex flex-wrap justify-between gap-2">
+                        <span>款式「{v.name || `款式 #${idx + 1}`}」含未稅對照：</span>
+                        <span className="font-medium text-[#222222]">
+                          含稅 NT$ {rowTax.taxIncludedPrice.toLocaleString()} ｜ 未稅 NT${' '}
+                          {rowTax.taxExcludedPrice.toLocaleString()}
+                          {rowTax.taxAmount > 0 && `（稅額 $${rowTax.taxAmount.toLocaleString()}）`}
                         </span>
-                        <span>｜</span>
-                        <span>
-                          未稅價 <strong>NT$ {rowTax.taxExcludedPrice.toLocaleString()}</strong>
-                        </span>
-                        <span>（5% 稅額 NT$ {rowTax.taxAmount.toLocaleString()}）</span>
                       </div>
                     </div>
                   );
