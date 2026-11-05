@@ -17,6 +17,7 @@ import {
   evaluateScheduleState,
   QuickFilterMode,
 } from '@/lib/portalConfig';
+import PillarGuideSection from '@/components/PillarGuideSection';
 
 export interface PortalProductItem {
   id: string;
@@ -772,55 +773,10 @@ export default function HomePortalClient({
         </div>
       </section>
 
-      {/* 3. 四大安心機制快速篩選橫幅 */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {[
-          {
-            badge: 'DIRECT P2P',
-            title: '0% 平台零抽成看板',
-            desc: '無官方收銀台抽成，買賣雙方直接LINE/電話對接',
-            filter: 'all' as const,
-          },
-          {
-            badge: 'REFUND GUARANTEE',
-            title: '預購／代購沒買到退費',
-            desc: '現場缺貨或官方砍單，保證取消訂單並全額退費',
-            filter: 'preorder_proxy' as const,
-          },
-          {
-            badge: 'TAX & INVOICE',
-            title: '二聯／三聯發票專區',
-            desc: '含稅未稅雙標示，支援個人二聯與企業三聯統編',
-            filter: 'invoice_only' as const,
-          },
-          {
-            badge: 'READY TO SHIP',
-            title: '在台現貨・當面點交',
-            desc: '24～48小時快速出貨或約定捷運站當面驗貨',
-            filter: 'in_stock' as const,
-          },
-        ].map((card, i) => {
-          const active = quickFilter === card.filter && card.filter !== 'all';
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => scrollToExplorer('全部商品', card.filter)}
-              className={`p-4 text-left border rounded-sm transition-all ${
-                active
-                  ? 'bg-[#FAF9F5] border-[#7F0019] ring-1 ring-[#7F0019]'
-                  : 'bg-white border-[#E6E3DC] hover:border-[#7F0019]'
-              }`}
-            >
-              <div className="text-[10px] font-bold tracking-wider text-[#7F0019]">
-                {card.badge}
-              </div>
-              <div className="text-sm font-bold text-[#222222] mt-0.5">{card.title}</div>
-              <div className="text-[11px] text-[#666666] mt-1">{card.desc}</div>
-            </button>
-          );
-        })}
-      </section>
+      {/* 3. 四大核心機制與交易保障詳解卡片（點擊開啟詳解與試算專書視窗，不再誤跳商品區） */}
+      <PillarGuideSection
+        onApplyProductFilter={(filter) => scrollToExplorer('全部商品', filter)}
+      />
 
       {/* 4. 注目實名店家推薦 */}
       <section className="bg-white border border-[#E6E3DC] rounded-sm p-6 space-y-4">
