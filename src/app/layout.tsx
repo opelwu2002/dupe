@@ -5,7 +5,11 @@ import Navbar from '@/components/Navbar';
 
 export const metadata: Metadata = {
   title: '嘟屁 (Dupe) - 極簡非對稱 P2P 拍賣資訊平台｜宇沛實業股份有限公司',
-  description: '回歸質樸交易，無中介抽成、無官方金流綁定的點對點商品展示看板。宇沛實業股份有限公司(UPAY Medical Technology Corporation) Estd. 2024。',
+  description:
+    '回歸質樸交易，無中介抽成、無官方金流綁定的點對點商品展示看板。宇沛實業股份有限公司(UPAY Medical Technology Corporation) Estd. 2024。',
+  verification: {
+    google: '67Yo8sRC_Tt0cHB4KjdM29KeyGpIaI4nkJeXGB3zhPU',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
